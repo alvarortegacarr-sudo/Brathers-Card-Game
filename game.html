@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Game - Table</title>
+    <link rel="stylesheet" href="css/game.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="game-container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="room-info">
+                <span class="code" id="displayCode">ROOM: ----</span>
+                <button onclick="copyCode()" class="btn-small">📋 Copy</button>
+            </div>
+            <div class="game-status" id="gameStatus">Waiting for players...</div>
+            <button onclick="leaveGame()" class="btn-danger">Leave</button>
+        </div>
+
+        <!-- Main Table -->
+        <div class="table">
+            <!-- Seat positions 1-5 arranged in a pentagon -->
+            <div class="seat seat-1" id="seat-1">
+                <div class="player-slot empty">
+                    <div class="avatar">?</div>
+                    <div class="name">Empty</div>
+                </div>
+            </div>
+            
+            <div class="seat seat-2" id="seat-2">
+                <div class="player-slot empty">
+                    <div class="avatar">?</div>
+                    <div class="name">Empty</div>
+                </div>
+            </div>
+            
+            <div class="seat seat-3" id="seat-3">
+                <div class="player-slot empty">
+                    <div class="avatar">?</div>
+                    <div class="name">Empty</div>
+                </div>
+            </div>
+            
+            <div class="seat seat-4" id="seat-4">
+                <div class="player-slot empty">
+                    <div class="avatar">?</div>
+                    <div class="name">Empty</div>
+                </div>
+            </div>
+            
+            <div class="seat seat-5" id="seat-5">
+                <div class="player-slot empty">
+                    <div class="avatar">?</div>
+                    <div class="name">Empty</div>
+                </div>
+            </div>
+
+            <!-- Center Area (Community cards, pot, etc.) -->
+            <div class="center-area">
+                <div class="community-cards" id="communityCards">
+                    <!-- Cards will be rendered here -->
+                    <div class="card-placeholder">♠</div>
+                    <div class="card-placeholder">♥</div>
+                    <div class="card-placeholder">♦</div>
+                    <div class="card-placeholder">♣</div>
+                </div>
+                <div class="pot" id="pot">Pot: 0</div>
+            </div>
+        </div>
+
+        <!-- Player Hand (Bottom - Your cards) -->
+        <div class="player-hand" id="playerHand">
+            <div class="hand-container">
+                <!-- Your cards appear here -->
+            </div>
+            <div class="controls" id="controls">
+                <button class="btn-action" onclick="gameAction('check')">Check</button>
+                <button class="btn-action" onclick="gameAction('call')">Call</button>
+                <button class="btn-action" onclick="gameAction('raise')">Raise</button>
+                <button class="btn-action danger" onclick="gameAction('fold')">Fold</button>
+            </div>
+        </div>
+
+        <!-- Chat/Log -->
+        <div class="side-panel">
+            <div class="player-list" id="playerList">
+                <h3>Players (0/5)</h3>
+                <ul id="playersUl"></ul>
+            </div>
+            <div class="game-log" id="gameLog">
+                <div class="log-entry">Welcome to the table!</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start Game Button (Host only) -->
+    <div class="host-controls" id="hostControls" style="display: none;">
+        <button onclick="startGame()" class="btn-start">🚀 Start Game</button>
+    </div>
+
+    <script src="js/supabase.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>

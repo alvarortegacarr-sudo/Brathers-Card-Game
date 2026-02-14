@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Game - Lobby</title>
+    <link rel="stylesheet" href="css/lobby.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <h1>🎴 CARD TABLE</h1>
+            <p>5-Player Online Card Game</p>
+        </div>
+
+        <div class="menu">
+            <div class="card create-room">
+                <h2>Create Table</h2>
+                <input type="text" id="playerName" placeholder="Your Name" maxlength="12">
+                <button onclick="createRoom()" class="btn-primary">
+                    <span class="icon">➕</span> Create Private Room
+                </button>
+            </div>
+
+            <div class="divider">or</div>
+
+            <div class="card join-room">
+                <h2>Join Table</h2>
+                <input type="text" id="joinName" placeholder="Your Name" maxlength="12">
+                <input type="text" id="roomCode" placeholder="Room Code (6 letters)" maxlength="6" style="text-transform: uppercase;">
+                <button onclick="joinRoom()" class="btn-secondary">
+                    <span class="icon">🎮</span> Join Game
+                </button>
+            </div>
+        </div>
+
+        <div id="errorMsg" class="error"></div>
+        
+        <div class="features">
+            <div class="feature">🔄 Real-time Sync</div>
+            <div class="feature">🔒 Private Rooms</div>
+            <div class="feature">👥 5 Players Max</div>
+        </div>
+    </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+        <script src="js/supabase.js"></script>
+        <script src="js/lobby.js"></script>
+</body>
+</html>
