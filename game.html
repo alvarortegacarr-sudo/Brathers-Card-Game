@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Card Game - Table</title>
+    <title>El Triunfo - Card Game</title>
     <link rel="stylesheet" href="css/game.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div class="game-container">
-            <!-- Start Game Button (Host only) -->
-    <div class="host-controls" id="hostControls" style="display: none;">
-        <button onclick="startGame()" class="btn-start">🚀 Start Game</button>
-    </div>
+    <div class="game-wrapper">
+        <!-- Host Controls -->
+        <div class="host-controls" id="hostControls" style="display: none;">
+            <button onclick="startNewSet()" class="btn-start">🚀 Start Game</button>
+        </div>
+
         <!-- Top Bar -->
         <div class="top-bar">
             <div class="room-info">
@@ -23,99 +23,95 @@
             <button onclick="leaveGame()" class="btn-danger">Leave</button>
         </div>
 
-        <!-- Main Table -->
-        <div class="table">
-            <!-- Seat positions 1-5 arranged in a pentagon -->
-            <div class="seat seat-1" id="seat-1">
-                <div class="player-slot empty">
-                    <div class="avatar">?</div>
-                    <div class="name">Empty</div>
+        <div class="main-layout">
+            <!-- Game Table -->
+            <div class="table-section">
+                <div class="table">
+                    <!-- Seat positions -->
+                    <div class="seat seat-1" id="seat-1">
+                        <div class="player-slot empty">
+                            <div class="avatar">?</div>
+                            <div class="name">Empty</div>
+                        </div>
+                    </div>
+                    <div class="seat seat-2" id="seat-2">
+                        <div class="player-slot empty">
+                            <div class="avatar">?</div>
+                            <div class="name">Empty</div>
+                        </div>
+                    </div>
+                    <div class="seat seat-3" id="seat-3">
+                        <div class="player-slot empty">
+                            <div class="avatar">?</div>
+                            <div class="name">Empty</div>
+                        </div>
+                    </div>
+                    <div class="seat seat-4" id="seat-4">
+                        <div class="player-slot empty">
+                            <div class="avatar">?</div>
+                            <div class="name">Empty</div>
+                        </div>
+                    </div>
+                    <div class="seat seat-5" id="seat-5">
+                        <div class="player-slot empty">
+                            <div class="avatar">?</div>
+                            <div class="name">Empty</div>
+                        </div>
+                    </div>
+
+                    <!-- Center Area -->
+                    <div class="center-area">
+                        <div class="triunfo-display" id="triunfoDisplay">
+                            <div class="card-back">🂠</div>
+                        </div>
+                        <div class="turn-info" id="turnInfo">Waiting to start...</div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="seat seat-2" id="seat-2">
-                <div class="player-slot empty">
-                    <div class="avatar">?</div>
-                    <div class="name">Empty</div>
-                </div>
-            </div>
-            
-            <div class="seat seat-3" id="seat-3">
-                <div class="player-slot empty">
-                    <div class="avatar">?</div>
-                    <div class="name">Empty</div>
-                </div>
-            </div>
-            
-            <div class="seat seat-4" id="seat-4">
-                <div class="player-slot empty">
-                    <div class="avatar">?</div>
-                    <div class="name">Empty</div>
-                </div>
-            </div>
-            
-            <div class="seat seat-5" id="seat-5">
-                <div class="player-slot empty">
-                    <div class="avatar">?</div>
-                    <div class="name">Empty</div>
+
+                <!-- Player Hand Area -->
+                <div class="player-area">
+                    <div class="game-info" id="gameInfo">
+                        <div class="phase-indicator" id="phaseIndicator">Waiting for host...</div>
+                    </div>
+                    <div class="hand-container" id="handContainer">
+                        <div class="waiting-message">Waiting for game to start...</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Center Area (Community cards, pot, etc.) -->
-            <div class="center-area">
-                <div class="community-cards" id="communityCards">
-                    <!-- Cards will be rendered here -->
-                    <div class="card-placeholder">♠</div>
-                    <div class="card-placeholder">♥</div>
-                    <div class="card-placeholder">♦</div>
-                    <div class="card-placeholder">♣</div>
+            <!-- Side Panel -->
+            <div class="side-panel">
+                <div class="player-list" id="playerList">
+                    <h3>Players (<span id="playerCount">0</span>/5)</h3>
+                    <ul id="playersUl"></ul>
                 </div>
-                <div class="pot" id="pot">Pot: 0</div>
+                
+                <div class="scoreboard" id="scoreboard">
+                    <h3>Scores</h3>
+                    <div class="score-content">Waiting for game...</div>
+                </div>
+                
+                <div class="chat-container">
+                    <div class="chat-header">💬 Chat</div>
+                    <div class="chat-messages" id="chatLog"></div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
+                        <button onclick="sendChatMessage()" class="btn-chat">Send</button>
+                    </div>
+                </div>
+                
+                <div class="game-log-panel">
+                    <h3>Game Log</h3>
+                    <div class="game-log" id="gameLog">
+                        <div class="log-entry">Welcome to El Triunfo!</div>
+                    </div>
+                </div>
             </div>
         </div>
-
-        <!-- Player Hand (Bottom - Your cards) -->
-        <div class="player-hand" id="playerHand">
-            <div class="hand-container">
-        <div class="game-info" id="gameInfo">
-            <div class="phase-indicator" id="phaseIndicator">Waiting for host...</div>
-            <div class="current-triunfo" id="currentTriunfo"></div>
-        </div>
-
-<!-- Side Panel with Chat -->
-<div class="side-panel">
-    <div class="player-list" id="playerList">
-        <h3>Players (0/5)</h3>
-        <ul id="playersUl"></ul>
     </div>
-        <div id="scoreboard" class="scoreboard">
-        <h3>Scores</h3>
-        <div class="score-row"><span>Waiting for game...</span></div>
-    </div>
-    
-    <!-- Chat Section -->
-    <div class="chat-container">
-        <div class="chat-header">💬 Chat</div>
-        <div class="chat-messages" id="chatLog"></div>
-        <div class="chat-input-area">
-            <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
-            <button onclick="sendChatMessage()" class="btn-chat">Send</button>
-        </div>
-    </div>
-    
-    <!-- Game Log -->
-    <div class="game-log-panel">
-        <h3>Game Log</h3>
-        <div class="game-log" id="gameLog">
-            <div class="log-entry">Welcome to the table!</div>
-        </div>
-    </div>
-</div>
 
-
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabase.js"></script>
-<script src="js/game.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/supabase.js"></script>
+    <script src="js/game.js"></script>
 </body>
 </html>
