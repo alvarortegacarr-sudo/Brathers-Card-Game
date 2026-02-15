@@ -1,9 +1,8 @@
 // ==========================================
-// CUSTOM CARD GAME - 40 CARDS, 5 ATTRIBUTES
-// CAR | CUL | TET | FIS | PER
+// EL TRIUNFO CARD GAME
+// Complete implementation with bidding, turns, and scoring
 // ==========================================
 
-// Get player ID
 let playerId = localStorage.getItem('playerId');
 if (!playerId) {
     playerId = crypto.randomUUID();
@@ -21,16 +20,17 @@ let myHand = [];
 let gameLoop = null;
 let heartbeatInterval = null;
 let isGameActive = false;
-let currentTurn = null;
-let gameDeck = [];
+let currentPhase = 'waiting'; // waiting, bidding, triunfo, playing, scoring
+let myPosition = 0;
+let triunfoCard = null;
+let currentAttribute = null;
+let cardsPerPlayer = 0;
 
-// Card distribution based on player count
-const CARD_DISTRIBUTION = {
-    2: 20,
-    3: 13,
-    4: 10,
-    5: 8
-};
+const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
+const ATTRIBUTE_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
+const WINNING_SCORE = 50;
+
+const CARD_DISTRIBUTION = { 2: 20, 3: 13, 4: 10, 5: 8 };
 
 // ==========================================
 // INITIALIZATION
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const { data: room, error } = await supabaseClient
         .from('rooms')
-        .select('*')
+        .select('*, players(*), turn_order(*)')
         .eq('code', roomCode)
         .single();
 
@@ -61,20 +61,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    const { data: playerCheck } = await supabaseClient
-        .from('players')
-        .select('*')
-        .eq('id', playerId)
-        .eq('room_id', room.id)
-        .single();
-
-    if (!playerCheck) {
-        redirectToLobby('You were removed from this room');
-        return;
-    }
-
     currentRoom = room;
     roomId = room.id;
+    players = room.players || [];
     
     setupUI();
     setupChatInput();
@@ -84,15 +73,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadChatHistory();
     startGameLoop();
     
-    // If game is already playing, load my hand
     if (room.status === 'playing') {
         isGameActive = true;
+        currentPhase = room.phase || 'bidding';
+        cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
         await loadMyHand();
+        await loadGameState();
         updateGameUI();
     }
     
-    addLog('Connected to table');
-    addChatMessage('System', 'Welcome! CAR | CUL | TET | FIS | PER - May the best cards win!');
+    addLog('Connected to El Triunfo');
+    addChatMessage('System', '🎴 Welcome to El Triunfo! Bid wisely, play smartly!');
 });
 
 function setupUI() {
@@ -103,6 +94,9 @@ function setupUI() {
     
     if (isHost && currentRoom?.status === 'waiting') {
         document.getElementById('hostControls').style.display = 'block';
+        document.getElementById('hostControls').innerHTML = `
+            <button onclick="startNewSet()" class="btn-start">🚀 Start New Set</button>
+        `;
     }
 }
 
@@ -115,67 +109,88 @@ function setupChatInput() {
             if (e.key === 'Enter') sendChatMessage();
         });
     }
-    
     if (sendButton) {
         sendButton.addEventListener('click', sendChatMessage);
     }
 }
 
 // ==========================================
-// GAME LOGIC - DEALING CARDS
+// GAME FLOW - START NEW SET
 // ==========================================
 
-async function startGame() {
+async function startNewSet() {
     if (players.length < 2) {
-        alert('Need at least 2 players to start');
+        alert('Need at least 2 players!');
         return;
     }
 
-    // Deal cards first
+    // Reset for new set
+    await supabaseClient.from('player_hands').delete().eq('room_id', roomId);
+    await supabaseClient.from('current_turn_plays').delete().eq('room_id', roomId);
+    await supabaseClient.from('turn_order').delete().eq('room_id', roomId);
+    
+    // Reset player stats for this set
+    for (const player of players) {
+        await supabaseClient
+            .from('players')
+            .update({ 
+                predicted_rounds: null, 
+                won_rounds: 0, 
+                has_bid: false 
+            })
+            .eq('id', player.id);
+    }
+
+    // Deal cards
     await dealCards();
     
-    // Then update room status
-    const { error } = await supabaseClient
+    // Create turn order (random start, then clockwise)
+    const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
+    for (let i = 0; i < shuffledPlayers.length; i++) {
+        await supabaseClient
+            .from('turn_order')
+            .insert({
+                room_id: roomId,
+                player_id: shuffledPlayers[i].id,
+                position: i
+            });
+    }
+
+    // Start bidding phase
+    await supabaseClient
         .from('rooms')
-        .update({ 
+        .update({
             status: 'playing',
-            game_data: { 
-                current_turn: players[0].id,
-                round: 1,
-                started_at: new Date().toISOString()
+            phase: 'bidding',
+            current_set: (currentRoom.current_set || 0) + 1,
+            current_turn: 0,
+            triunfo_card_id: null,
+            current_attribute: null,
+            game_data: {
+                dealer: shuffledPlayers[0].id,
+                bids_complete: false
             }
         })
         .eq('id', roomId);
 
-    if (error) {
-        alert('Failed to start game');
-    }
+    addChatMessage('System', `🎴 Set ${(currentRoom.current_set || 0) + 1} started! Cards dealt.`);
 }
 
 async function dealCards() {
-    // Get all 40 cards
-    const { data: allCards } = await supabaseClient
-        .from('cards')
-        .select('*');
-    
-    if (!allCards || allCards.length !== 40) {
-        alert('Error: Card deck not found');
+    const { data: allCards } = await supabaseClient.from('cards').select('*');
+    if (!allCards || allCards.length < 40) {
+        alert('Error: Need 40 cards in deck!');
         return;
     }
 
-    // Shuffle deck
     const shuffled = [...allCards].sort(() => Math.random() - 0.5);
+    cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
     
-    // Determine cards per player
-    const cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
-    
-    // Deal cards to each player
     let cardIndex = 0;
     for (const player of players) {
         const playerCards = shuffled.slice(cardIndex, cardIndex + cardsPerPlayer);
         cardIndex += cardsPerPlayer;
         
-        // Insert into player_hands
         for (const card of playerCards) {
             await supabaseClient
                 .from('player_hands')
@@ -187,7 +202,7 @@ async function dealCards() {
         }
     }
     
-    addChatMessage('System', `🎮 Game started! Each player gets ${cardsPerPlayer} cards.`);
+    addChatMessage('System', `📦 ${cardsPerPlayer} cards dealt to each player!`);
 }
 
 async function loadMyHand() {
@@ -199,13 +214,470 @@ async function loadMyHand() {
         .eq('played', false);
     
     if (hand) {
-        myHand = hand.map(h => h.cards);
-        renderHand(myHand);
+        myHand = hand.map(h => ({ ...h.cards, hand_id: h.id }));
+    }
+}
+
+async function loadGameState() {
+    const { data: room } = await supabaseClient
+        .from('rooms')
+        .select('*, triunfo:cards!triunfo_card_id(*)')
+        .eq('id', roomId)
+        .single();
+    
+    if (room) {
+        currentPhase = room.phase;
+        triunfoCard = room.triunfo;
+        currentAttribute = room.current_attribute;
+        
+        const { data: turnOrder } = await supabaseClient
+            .from('turn_order')
+            .select('*')
+            .eq('room_id', roomId)
+            .order('position');
+        
+        if (turnOrder) {
+            const myTurnEntry = turnOrder.find(t => t.player_id === playerId);
+            myPosition = myTurnEntry ? myTurnEntry.position : 0;
+        }
     }
 }
 
 // ==========================================
-// CHAT SYSTEM
+// BIDDING PHASE
+// ==========================================
+
+async function submitBid(bid) {
+    if (currentPhase !== 'bidding') return;
+    
+    await supabaseClient
+        .from('players')
+        .update({ 
+            predicted_rounds: bid, 
+            has_bid: true 
+        })
+        .eq('id', playerId);
+    
+    addChatMessage('System', `You bid ${bid} rounds!`);
+    
+    // Check if all players have bid
+    const { data: allPlayers } = await supabaseClient
+        .from('players')
+        .select('*')
+        .eq('room_id', roomId);
+    
+    const allBidded = allPlayers.every(p => p.has_bid);
+    
+    if (allBidded) {
+        await revealTriunfo();
+    }
+}
+
+async function revealTriunfo() {
+    // Pick random card from deck as El Triunfo
+    const { data: allCards } = await supabaseClient.from('cards').select('*');
+    const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
+    
+    await supabaseClient
+        .from('rooms')
+        .update({
+            phase: 'triunfo',
+            triunfo_card_id: randomCard.id
+        })
+        .eq('id', roomId);
+    
+    addChatMessage('System', `👑 EL TRIUNFO is revealed: ${randomCard.name}!`);
+    addChatMessage('System', `All its attributes are now 99!`);
+    
+    // Start playing after 3 seconds
+    setTimeout(async () => {
+        await supabaseClient
+            .from('rooms')
+            .update({
+                phase: 'playing',
+                current_turn: 1,
+                current_attribute: null
+            })
+            .eq('id', roomId);
+        
+        addChatMessage('System', `🎮 Turn 1 begins! First player selects attribute.`);
+    }, 3000);
+}
+
+// ==========================================
+// PLAYING PHASE
+// ==========================================
+
+async function selectAttribute(attribute) {
+    if (currentPhase !== 'playing') return;
+    
+    const { data: turnOrder } = await supabaseClient
+        .from('turn_order')
+        .select('*, players(*)')
+        .eq('room_id', roomId)
+        .order('position');
+    
+    const currentTurnPlayer = turnOrder[(currentRoom.current_turn - 1) % players.length];
+    
+    if (currentTurnPlayer.player_id !== playerId) {
+        alert('Not your turn to select attribute!');
+        return;
+    }
+    
+    await supabaseClient
+        .from('rooms')
+        .update({ current_attribute: attribute })
+        .eq('id', roomId);
+    
+    addChatMessage('System', `${currentPlayer} selected ${ATTRIBUTE_NAMES[attribute]}!`);
+}
+
+async function playCard(cardId) {
+    if (currentPhase !== 'playing') return;
+    if (!currentAttribute) {
+        alert('Wait for attribute to be selected!');
+        return;
+    }
+    
+    const card = myHand.find(c => c.id === cardId);
+    if (!card) return;
+    
+    // Check if it's my turn to play
+    const { data: currentPlays } = await supabaseClient
+        .from('current_turn_plays')
+        .select('*')
+        .eq('room_id', roomId);
+    
+    const { data: turnOrder } = await supabaseClient
+        .from('turn_order')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('position');
+    
+    const playsThisTurn = currentPlays.filter(p => 
+        p.created_at > new Date(Date.now() - 60000).toISOString()
+    );
+    
+    const expectedPlayerIndex = playsThisTurn.length;
+    const expectedPlayer = turnOrder[expectedPlayerIndex % players.length];
+    
+    if (expectedPlayer.player_id !== playerId) {
+        alert('Not your turn to play!');
+        return;
+    }
+    
+    // Calculate value (99 if it's El Triunfo)
+    let value = card[currentAttribute];
+    if (triunfoCard && card.id === triunfoCard.id) {
+        value = 99;
+    }
+    
+    // Play card
+    await supabaseClient
+        .from('current_turn_plays')
+        .insert({
+            room_id: roomId,
+            player_id: playerId,
+            card_id: cardId,
+            attribute: currentAttribute,
+            value: value
+        });
+    
+    // Mark card as played
+    await supabaseClient
+        .from('player_hands')
+        .update({ played: true })
+        .eq('room_id', roomId)
+        .eq('player_id', playerId)
+        .eq('card_id', cardId);
+    
+    myHand = myHand.filter(c => c.id !== cardId);
+    renderHand(myHand);
+    
+    addChatMessage('System', `${currentPlayer} played ${card.name} (${value} ${ATTRIBUTE_NAMES[currentAttribute]})`);
+    
+    // Check if turn is complete
+    if (playsThisTurn.length + 1 >= players.length) {
+        setTimeout(resolveTurn, 1000);
+    }
+}
+
+async function resolveTurn() {
+    const { data: plays } = await supabaseClient
+        .from('current_turn_plays')
+        .select('*, players(*), cards(*)')
+        .eq('room_id', roomId)
+        .order('played_at', { ascending: false })
+        .limit(players.length);
+    
+    if (!plays || plays.length < players.length) return;
+    
+    // Find winner (highest value)
+    const winner = plays.reduce((max, play) => 
+        play.value > max.value ? play : max
+    );
+    
+    // Award round to winner
+    await supabaseClient
+        .from('players')
+        .update({ won_rounds: winner.players.won_rounds + 1 })
+        .eq('id', winner.player_id);
+    
+    addChatMessage('System', `🏆 ${winner.players.name} wins the round with ${winner.cards.name} (${winner.value})!`);
+    
+    // Clear turn plays
+    await supabaseClient.from('current_turn_plays').delete().eq('room_id', roomId);
+    
+    // Check if set is over (no more cards)
+    const { data: remainingCards } = await supabaseClient
+        .from('player_hands')
+        .select('*')
+        .eq('room_id', roomId)
+        .eq('played', false);
+    
+    if (!remainingCards || remainingCards.length === 0) {
+        await endSet();
+    } else {
+        // Next turn
+        const nextTurn = (currentRoom.current_turn || 0) + 1;
+        await supabaseClient
+            .from('rooms')
+            .update({
+                current_turn: nextTurn,
+                current_attribute: null
+            })
+            .eq('id', roomId);
+        
+        addChatMessage('System', `Turn ${nextTurn} begins!`);
+    }
+}
+
+// ==========================================
+// SCORING PHASE
+// ==========================================
+
+async function endSet() {
+    currentPhase = 'scoring';
+    await supabaseClient.from('rooms').update({ phase: 'scoring' }).eq('id', roomId);
+    
+    const { data: finalPlayers } = await supabaseClient
+        .from('players')
+        .select('*')
+        .eq('room_id', roomId);
+    
+    let results = [];
+    
+    for (const player of finalPlayers) {
+        const predicted = player.predicted_rounds || 0;
+        const won = player.won_rounds || 0;
+        
+        let points = 0;
+        points += won * 2; // +2 per won round
+        
+        if (predicted === won) {
+            points += 3; // Bonus for correct prediction
+        } else {
+            points -= 2; // Penalty for wrong prediction
+        }
+        
+        const newTotal = (player.total_score || 0) + points;
+        
+        await supabaseClient
+            .from('players')
+            .update({ total_score: newTotal })
+            .eq('id', player.id);
+        
+        results.push({
+            name: player.name,
+            predicted,
+            won,
+            points,
+            total: newTotal
+        });
+    }
+    
+    // Show results
+    let resultMsg = '📊 SET RESULTS:\n';
+    results.sort((a, b) => b.total - a.total).forEach(r => {
+        resultMsg += `${r.name}: Predicted ${r.predicted}, Won ${r.won}, +${r.points} pts (Total: ${r.total})\n`;
+    });
+    
+    addChatMessage('System', resultMsg);
+    
+    // Check for winner
+    const winner = results.find(r => r.total >= WINNING_SCORE);
+    if (winner) {
+        addChatMessage('System', `🎉 ${winner.name} WINS THE GAME with ${winner.total} points!`);
+        setTimeout(() => endGame('completed'), 5000);
+    } else {
+        // Prepare for next set
+        document.getElementById('hostControls').style.display = 'block';
+        document.getElementById('hostControls').innerHTML = `
+            <button onclick="startNewSet()" class="btn-start">🚀 Start Next Set</button>
+        `;
+        addChatMessage('System', `Host can start the next set!`);
+    }
+}
+
+// ==========================================
+// UI RENDERING
+// ==========================================
+
+function renderHand(cards) {
+    const container = document.querySelector('.hand-container');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    if (currentPhase === 'bidding') {
+        container.innerHTML = `
+            <div class="bidding-panel">
+                <h3>How many rounds will you win?</h3>
+                <div class="bid-buttons">
+                    ${Array.from({length: cardsPerPlayer + 1}, (_, i) => 
+                        `<button onclick="submitBid(${i})" class="btn-bid">${i}</button>`
+                    ).join('')}
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    if (currentPhase === 'triunfo' && triunfoCard) {
+        container.innerHTML = `
+            <div class="triunfo-reveal">
+                <h2>👑 EL TRIUNFO 👑</h2>
+                <div class="game-card triunfo">
+                    <div class="card-header">${triunfoCard.name}</div>
+                    <div class="card-stats">
+                        ${ATTRIBUTES.map(attr => `
+                            <div class="stat triunfo-stat">
+                                <span class="stat-label">${ATTRIBUTE_NAMES[attr]}</span>
+                                <span class="stat-value">99</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Playing phase - show cards
+    cards.forEach((card) => {
+        const isTriunfo = triunfoCard && card.id === triunfoCard.id;
+        const cardEl = document.createElement('div');
+        cardEl.className = `game-card ${isTriunfo ? 'triunfo-card' : ''}`;
+        
+        let statsHtml = '';
+        if (currentAttribute) {
+            // Show only the selected attribute highlighted
+            statsHtml = `
+                <div class="selected-attribute">
+                    <span class="attr-name">${ATTRIBUTE_NAMES[currentAttribute]}</span>
+                    <span class="attr-value">${isTriunfo ? 99 : card[currentAttribute]}</span>
+                </div>
+                <button onclick="playCard(${card.id})" class="btn-play">PLAY</button>
+            `;
+        } else {
+            // Show all attributes (for attribute selector)
+            statsHtml = ATTRIBUTES.map(attr => `
+                <div class="stat" onclick="selectAndPlay('${attr}', ${card.id})">
+                    <span class="stat-label">${ATTRIBUTE_NAMES[attr]}</span>
+                    <span class="stat-value">${isTriunfo ? 99 : card[attr]}</span>
+                </div>
+            `).join('');
+        }
+        
+        cardEl.innerHTML = `
+            <div class="card-header">${card.name} ${isTriunfo ? '👑' : ''}</div>
+            <div class="card-stats ${currentAttribute ? 'single' : ''}">
+                ${statsHtml}
+            </div>
+        `;
+        container.appendChild(cardEl);
+    });
+}
+
+async function selectAndPlay(attribute, cardId) {
+    // If I'm the attribute selector, select attribute first
+    const { data: turnOrder } = await supabaseClient
+        .from('turn_order')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('position');
+    
+    const currentTurnIdx = (currentRoom.current_turn - 1) % players.length;
+    const selector = turnOrder[currentTurnIdx];
+    
+    if (selector.player_id === playerId && !currentAttribute) {
+        await selectAttribute(attribute);
+        setTimeout(() => playCard(cardId), 500);
+    } else {
+        playCard(cardId);
+    }
+}
+
+function updateGameUI() {
+    const status = document.getElementById('gameStatus');
+    if (!status) return;
+    
+    switch(currentPhase) {
+        case 'bidding':
+            status.textContent = 'Place your bid! How many rounds will you win?';
+            status.style.color = '#ffd700';
+            break;
+        case 'triunfo':
+            status.textContent = 'El Triunfo revealed!';
+            status.style.color = '#ff6b6b';
+            break;
+        case 'playing':
+            if (currentAttribute) {
+                status.textContent = `Playing: ${ATTRIBUTE_NAMES[currentAttribute]} | Turn ${currentRoom.current_turn}`;
+            } else {
+                const { data: turnOrder } = supabaseClient
+                    .from('turn_order')
+                    .select('*, players(*)')
+                    .eq('room_id', roomId)
+                    .eq('position', (currentRoom.current_turn - 1) % players.length)
+                    .single().then(({ data }) => {
+                        if (data) {
+                            status.textContent = `${data.players.name} selects attribute...`;
+                        }
+                    });
+            }
+            status.style.color = '#48bb78';
+            break;
+        case 'scoring':
+            status.textContent = 'Scoring...';
+            status.style.color = '#4299e1';
+            break;
+    }
+    
+    // Update scores display
+    updateScoreboard();
+}
+
+function updateScoreboard() {
+    const scoreDiv = document.getElementById('scoreboard');
+    if (!scoreDiv) return;
+    
+    let html = '<h3>Scores</h3>';
+    players.sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
+    players.forEach(p => {
+        html += `
+            <div class="score-row">
+                <span>${p.name}</span>
+                <span>${p.total_score || 0} pts</span>
+                ${p.predicted_rounds !== null ? `(Bid: ${p.predicted_rounds})` : ''}
+            </div>
+        `;
+    });
+    scoreDiv.innerHTML = html;
+}
+
+// ==========================================
+// CHAT & UTILITIES (same as before)
 // ==========================================
 
 function setupChatSubscription() {
@@ -289,7 +761,7 @@ function escapeHtml(text) {
 }
 
 // ==========================================
-// REALTIME SYNC
+// REALTIME & SYNC
 // ==========================================
 
 function setupRealtimeSubscription() {
@@ -301,13 +773,17 @@ function setupRealtimeSubscription() {
                 await updatePlayerList();
                 
                 if (payload.eventType === 'INSERT') {
-                    addLog(`${payload.new.name} joined the table`);
+                    addLog(`${payload.new.name} joined`);
                     addChatMessage('System', `${payload.new.name} joined the table`);
                 } else if (payload.eventType === 'DELETE') {
                     const playerName = payload.old?.name || 'A player';
-                    addLog(`${playerName} left the table`);
+                    addLog(`${playerName} left`);
                     addChatMessage('System', `${playerName} left the table`);
-                    await checkGameEndConditions();
+                } else if (payload.eventType === 'UPDATE') {
+                    // Update scores
+                    const idx = players.findIndex(p => p.id === payload.new.id);
+                    if (idx >= 0) players[idx] = payload.new;
+                    updateScoreboard();
                 }
             }
         )
@@ -315,56 +791,30 @@ function setupRealtimeSubscription() {
             { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
             async (payload) => {
                 currentRoom = payload.new;
+                currentPhase = payload.new.phase;
+                currentAttribute = payload.new.current_attribute;
+                triunfoCard = payload.new.triunfo_card_id;
                 
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
-                    document.getElementById('gameStatus').textContent = 'Game in progress';
-                    document.getElementById('hostControls').style.display = 'none';
                     isGameActive = true;
-                    currentTurn = payload.new.game_data?.current_turn;
+                    cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
                     await loadMyHand();
                     updateGameUI();
-                    addChatMessage('System', '🎮 Game started! Select an attribute to challenge!');
+                }
+                
+                if (payload.new.phase !== payload.old.phase) {
+                    await loadGameState();
+                    renderHand(myHand);
+                    updateGameUI();
                 }
                 
                 if (payload.new.status === 'ended') {
-                    isGameActive = false;
                     endGame(payload.new.ended_reason);
-                }
-                
-                if (payload.old.host_id !== payload.new.host_id) {
-                    const { data: newHost } = await supabaseClient
-                        .from('players')
-                        .select('name')
-                        .eq('id', payload.new.host_id)
-                        .single();
-                    
-                    addLog(`${newHost?.name || 'New host'} is now the host`);
-                    addChatMessage('System', `👑 ${newHost?.name || 'New host'} is now the host`);
-                    
-                    if (payload.new.host_id === playerId) {
-                        localStorage.setItem('isHost', 'true');
-                        if (currentRoom.status === 'waiting') {
-                            document.getElementById('hostControls').style.display = 'block';
-                        }
-                    }
-                }
-            }
-        )
-        .on('postgres_changes',
-            { event: '*', schema: 'public', table: 'player_hands', filter: `room_id=eq.${roomId}` },
-            async (payload) => {
-                // Refresh hand if cards change
-                if (isGameActive) {
-                    await loadMyHand();
                 }
             }
         )
         .subscribe();
 }
-
-// ==========================================
-// PLAYER MANAGEMENT
-// ==========================================
 
 async function updatePlayerList() {
     const { data: playersData, error } = await supabaseClient
@@ -374,7 +824,6 @@ async function updatePlayerList() {
         .order('seat_number');
 
     if (error) return;
-
     players = playersData;
     
     document.querySelectorAll('.seat').forEach(seat => {
@@ -387,22 +836,13 @@ async function updatePlayerList() {
             slot.classList.add('active');
             slot.querySelector('.avatar').textContent = player.name.charAt(0).toUpperCase();
             slot.querySelector('.name').textContent = player.name;
-            
-            // Highlight current turn
-            if (isGameActive && currentTurn === player.id) {
-                slot.style.borderColor = '#ffd700';
-                slot.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.5)';
-            } else {
-                slot.style.borderColor = player.id === playerId ? '#48bb78' : 'rgba(255,255,255,0.1)';
-                slot.style.boxShadow = 'none';
-            }
+            slot.style.borderColor = player.id === playerId ? '#48bb78' : 'rgba(255,255,255,0.1)';
         } else {
             slot.classList.add('empty');
             slot.classList.remove('active');
             slot.querySelector('.avatar').textContent = '?';
             slot.querySelector('.name').textContent = 'Empty';
             slot.style.borderColor = 'rgba(255,255,255,0.1)';
-            slot.style.boxShadow = 'none';
         }
     });
 
@@ -412,145 +852,14 @@ async function updatePlayerList() {
         players.forEach(p => {
             const li = document.createElement('li');
             let badges = '';
-            if (p.id === currentRoom?.host_id) badges += '<span class="host">👑 HOST</span>';
-            if (p.id === playerId) badges += '<span class="you"> YOU</span>';
-            if (isGameActive && currentTurn === p.id) badges += '<span class="turn">🎯 TURN</span>';
+            if (p.id === currentRoom?.host_id) badges += '<span class="host">👑</span>';
+            if (p.id === playerId) badges += '<span class="you">YOU</span>';
+            if (p.has_bid) badges += '<span class="bid">✓</span>';
             
-            li.innerHTML = `<span>${p.name} (Seat ${p.seat_number})</span><div>${badges}</div>`;
+            li.innerHTML = `<span>${p.name} (${p.total_score || 0}pts)</span><div>${badges}</div>`;
             ul.appendChild(li);
         });
     }
-
-    const playerListHeader = document.querySelector('.player-list h3');
-    if (playerListHeader) {
-        playerListHeader.textContent = `Players (${players.length}/5)`;
-    }
-    
-    const status = document.getElementById('gameStatus');
-    if (status && !isGameActive) {
-        if (players.length < 2) {
-            status.textContent = 'Waiting for more players...';
-            status.style.color = '#ecc94b';
-        } else {
-            status.textContent = 'Ready to start';
-            status.style.color = '#48bb78';
-        }
-    }
-}
-
-// ==========================================
-// CARD RENDERING
-// ==========================================
-
-function renderHand(cards) {
-    const container = document.querySelector('.hand-container');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    cards.forEach((card, index) => {
-        const cardEl = document.createElement('div');
-        cardEl.className = 'game-card';
-        cardEl.innerHTML = `
-            <div class="card-header">${escapeHtml(card.name)}</div>
-            <div class="card-stats">
-                <div class="stat" onclick="playCard(${card.id}, 'car')">
-                    <span class="stat-label">CAR</span>
-                    <span class="stat-value">${card.car}</span>
-                </div>
-                <div class="stat" onclick="playCard(${card.id}, 'cul')">
-                    <span class="stat-label">CUL</span>
-                    <span class="stat-value">${card.cul}</span>
-                </div>
-                <div class="stat" onclick="playCard(${card.id}, 'tet')">
-                    <span class="stat-label">TET</span>
-                    <span class="stat-value">${card.tet}</span>
-                </div>
-                <div class="stat" onclick="playCard(${card.id}, 'fis')">
-                    <span class="stat-label">FIS</span>
-                    <span class="stat-value">${card.fis}</span>
-                </div>
-                <div class="stat" onclick="playCard(${card.id}, 'per')">
-                    <span class="stat-label">PER</span>
-                    <span class="stat-value">${card.per}</span>
-                </div>
-            </div>
-        `;
-        container.appendChild(cardEl);
-    });
-}
-
-function updateGameUI() {
-    const status = document.getElementById('gameStatus');
-    if (status) {
-        if (currentTurn === playerId) {
-            status.textContent = 'Your turn! Select a card and attribute';
-            status.style.color = '#48bb78';
-        } else {
-            const currentPlayerName = players.find(p => p.id === currentTurn)?.name || 'Another player';
-            status.textContent = `Waiting for ${currentPlayerName}...`;
-            status.style.color = '#ecc94b';
-        }
-    }
-}
-
-// ==========================================
-// GAMEPLAY
-// ==========================================
-
-async function playCard(cardId, attribute) {
-    if (!isGameActive) return;
-    if (currentTurn !== playerId) {
-        alert('Not your turn!');
-        return;
-    }
-    
-    const card = myHand.find(c => c.id === cardId);
-    if (!card) return;
-    
-    const value = card[attribute];
-    
-    addChatMessage('System', `You played ${card.name} with ${attribute.toUpperCase()}: ${value}`);
-    
-    // Mark card as played
-    await supabaseClient
-        .from('player_hands')
-        .update({ played: true })
-        .eq('room_id', roomId)
-        .eq('player_id', playerId)
-        .eq('card_id', cardId);
-    
-    // Remove from local hand
-    myHand = myHand.filter(c => c.id !== cardId);
-    renderHand(myHand);
-    
-    // Here you would implement:
-    // 1. Compare with other players' cards
-    // 2. Determine winner of round
-    // 3. Award point or card
-    // 4. Check win condition
-    // 5. Pass turn to next player
-    
-    // For now, just pass turn
-    const currentIndex = players.findIndex(p => p.id === currentTurn);
-    const nextIndex = (currentIndex + 1) % players.length;
-    const nextPlayer = players[nextIndex];
-    
-    await supabaseClient
-        .from('rooms')
-        .update({
-            game_data: {
-                ...currentRoom.game_data,
-                current_turn: nextPlayer.id,
-                last_play: {
-                    player: playerId,
-                    card: card.name,
-                    attribute: attribute,
-                    value: value
-                }
-            }
-        })
-        .eq('id', roomId);
 }
 
 // ==========================================
@@ -564,110 +873,11 @@ function startGameLoop() {
             .update({ last_seen: new Date().toISOString() })
             .eq('id', playerId);
     }, 3000);
-    
-    gameLoop = setInterval(async () => {
-        await cleanupDisconnectedPlayers();
-        await checkGameEndConditions();
-    }, 5000);
 }
-
-async function cleanupDisconnectedPlayers() {
-    const cutoffTime = new Date(Date.now() - 10000).toISOString();
-    
-    const { data: inactivePlayers } = await supabaseClient
-        .from('players')
-        .select('id, name')
-        .eq('room_id', roomId)
-        .lt('last_seen', cutoffTime);
-    
-    if (inactivePlayers) {
-        for (const player of inactivePlayers) {
-            await supabaseClient.from('players').delete().eq('id', player.id);
-            addLog(`${player.name} disconnected (timeout)`);
-        }
-    }
-}
-
-async function checkGameEndConditions() {
-    const { data: room } = await supabaseClient
-        .from('rooms')
-        .select('*, players(*)')
-        .eq('id', roomId)
-        .single();
-    
-    if (!room || room.status === 'ended') return;
-    
-    const activePlayers = room.players || [];
-    
-    if (activePlayers.length === 0) {
-        await endGameServer('empty');
-        return;
-    }
-    
-    const hostStillHere = activePlayers.some(p => p.id === room.host_id);
-    if (!hostStillHere && room.status === 'playing') {
-        await endGameServer('host_left');
-        return;
-    }
-    
-    if (activePlayers.length === 1 && room.status === 'playing') {
-        await endGameServer('insufficient_players');
-        return;
-    }
-    
-    if (!hostStillHere && room.status === 'waiting' && activePlayers.length > 0) {
-        const newHost = activePlayers[0];
-        await supabaseClient
-            .from('rooms')
-            .update({ host_id: newHost.id })
-            .eq('id', roomId);
-        
-        if (newHost.id === playerId) {
-            localStorage.setItem('isHost', 'true');
-            document.getElementById('hostControls').style.display = 'block';
-        }
-    }
-}
-
-async function endGameServer(reason) {
-    await supabaseClient
-        .from('rooms')
-        .update({ 
-            status: 'ended', 
-            ended_at: new Date().toISOString(), 
-            ended_reason: reason 
-        })
-        .eq('id', roomId);
-}
-
-function endGame(reason) {
-    isGameActive = false;
-    
-    let message = 'Game ended';
-    switch(reason) {
-        case 'empty': message = 'Game ended: All players left'; break;
-        case 'host_left': message = 'Game ended: Host disconnected'; break;
-        case 'insufficient_players': message = 'Game ended: Not enough players'; break;
-        case 'manual': message = 'Game ended by host'; break;
-    }
-    
-    addLog(message);
-    addChatMessage('System', message);
-    alert(message);
-    
-    setTimeout(() => {
-        redirectToLobby();
-    }, 3000);
-}
-
-// ==========================================
-// UTILITIES
-// ==========================================
 
 function addLog(message) {
     const log = document.getElementById('gameLog');
     if (!log) return;
-    
     const entry = document.createElement('div');
     entry.className = 'log-entry';
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
@@ -683,38 +893,21 @@ function copyCode() {
 
 function redirectToLobby(message) {
     if (message) alert(message);
-    
-    localStorage.removeItem('currentRoom');
-    localStorage.removeItem('currentPlayer');
-    localStorage.removeItem('isHost');
-    localStorage.removeItem('seatNumber');
-    
+    localStorage.clear();
     window.location.href = 'index.html';
 }
-
-// ==========================================
-// CLEANUP
-// ==========================================
 
 async function leaveGame() {
     if (gameLoop) clearInterval(gameLoop);
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    
     if (subscription) await subscription.unsubscribe();
     if (chatSubscription) await chatSubscription.unsubscribe();
     
-    if (currentRoom?.host_id === playerId && isGameActive) {
-        await endGameServer('host_left');
-    }
-    
     await supabaseClient.from('players').delete().eq('id', playerId);
-    
     redirectToLobby();
 }
 
 window.addEventListener('beforeunload', async () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
-    if (gameLoop) clearInterval(gameLoop);
-    
     await supabaseClient.from('players').delete().eq('id', playerId);
 });
