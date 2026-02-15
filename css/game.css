@@ -649,5 +649,260 @@ body {
 @keyframes pulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.05); }
+}/* Game Info Panel */
+.game-info {
+    text-align: center;
+    padding: 15px;
+    background: rgba(26, 35, 50, 0.9);
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.phase-indicator {
+    font-size: 1.3rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.current-triunfo {
+    font-size: 1rem;
+    color: #ffd700;
+}
+
+/* Mini cards for bidding preview */
+.mini-card {
+    width: 100px;
+    background: rgba(26, 35, 50, 0.9);
+    border: 1px solid #4a5568;
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+}
+
+/* Bidding Panel - BIGGER TEXT */
+.bidding-panel {
+    text-align: center;
+    padding: 30px;
+    background: rgba(26, 35, 50, 0.95);
+    border-radius: 15px;
+    border: 3px solid #ffd700;
+    margin-top: 20px;
+}
+
+.bidding-panel h2 {
+    color: #ffd700;
+    margin-bottom: 15px;
+    font-size: 2rem;
+}
+
+.bidding-panel p {
+    color: #aaa;
+    margin-bottom: 25px;
+    font-size: 1.2rem;
+}
+
+.bid-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: center;
+}
+
+.btn-bid {
+    width: 70px;
+    height: 70px;
+    font-size: 1.8rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-bid:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 25px rgba(102, 126, 234, 0.6);
+}
+
+/* Waiting panel */
+.waiting-panel {
+    text-align: center;
+    padding: 40px;
+}
+
+.waiting-panel h2 {
+    color: #48bb78;
+    font-size: 2rem;
+    margin-bottom: 15px;
+}
+
+.waiting-panel p {
+    color: #aaa;
+    font-size: 1.2rem;
+}
+
+.spinner {
+    width: 50px;
+    height: 50px;
+    border: 5px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #ffd700;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Attribute Selector */
+.attribute-selector {
+    text-align: center;
+    padding: 25px;
+    background: rgba(26, 35, 50, 0.95);
+    border-radius: 15px;
+    border: 2px solid #4299e1;
+    margin-bottom: 20px;
+}
+
+.attribute-selector h2 {
+    color: #ffd700;
+    margin-bottom: 10px;
+    font-size: 1.8rem;
+}
+
+.attribute-buttons {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-attribute {
+    padding: 15px 30px;
+    font-size: 1.3rem;
+    font-weight: bold;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.btn-attribute:hover {
+    transform: scale(1.1);
+}
+
+.btn-attribute.car { background: #e53e3e; color: white; }
+.btn-attribute.cul { background: #805ad5; color: white; }
+.btn-attribute.tet { background: #38a169; color: white; }
+.btn-attribute.fis { background: #3182ce; color: white; }
+.btn-attribute.per { background: #d69e2e; color: white; }
+
+/* Current Attribute Banner */
+.current-attribute-banner {
+    text-align: center;
+    padding: 20px;
+    background: rgba(255, 215, 0, 0.1);
+    border: 2px solid #ffd700;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+/* Cards Grid */
+.cards-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: center;
+}
+
+/* Game Card Improvements */
+.game-card {
+    width: 140px;
+    background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%);
+    border: 2px solid #4a5568;
+    border-radius: 12px;
+    padding: 12px;
+    color: white;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+    user-select: none;
+}
+
+.game-card:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    border-color: #ffd700;
+}
+
+.triunfo-card {
+    border: 3px solid #ffd700 !important;
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.4) !important;
+    background: linear-gradient(135deg, #2d3748 0%, #4a3728 100%) !important;
+}
+
+/* My Cards Preview */
+.my-cards-preview {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.my-cards-preview h3 {
+    color: #ffd700;
+    margin-bottom: 15px;
+    font-size: 1.5rem;
+}
+
+/* Scoreboard Improvements */
+#scoreboard {
+    background: rgba(26, 35, 50, 0.95);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 15px;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+#scoreboard h3 {
+    color: #ffd700;
+    margin-bottom: 12px;
+    font-size: 1.2rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 8px;
+}
+
+.score-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.95rem;
+}
+
+.score-row:last-child {
+    border-bottom: none;
+}
+
+/* Remove old poker controls */
+.controls {
+    display: none !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .btn-bid {
+        width: 55px;
+        height: 55px;
+        font-size: 1.4rem;
+    }
+    
+    .bidding-panel h2 {
+        font-size: 1.5rem;
+    }
+    
+    .game-card {
+        width: 120px;
+    }
 }
 }

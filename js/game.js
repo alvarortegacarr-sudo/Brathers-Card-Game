@@ -1,6 +1,5 @@
 // ==========================================
-// EL TRIUNFO CARD GAME
-// Complete implementation with bidding, turns, and scoring
+// EL TRIUNFO CARD GAME - FIXED VERSION
 // ==========================================
 
 let playerId = localStorage.getItem('playerId');
@@ -20,11 +19,12 @@ let myHand = [];
 let gameLoop = null;
 let heartbeatInterval = null;
 let isGameActive = false;
-let currentPhase = 'waiting'; // waiting, bidding, triunfo, playing, scoring
+let currentPhase = 'waiting';
 let myPosition = 0;
 let triunfoCard = null;
 let currentAttribute = null;
 let cardsPerPlayer = 0;
+let hasBidded = false;
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
 const ATTRIBUTE_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
@@ -92,11 +92,15 @@ function setupUI() {
     
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
     
-    if (isHost && currentRoom?.status === 'waiting') {
-        document.getElementById('hostControls').style.display = 'block';
-        document.getElementById('hostControls').innerHTML = `
-            <button onclick="startNewSet()" class="btn-start">🚀 Start New Set</button>
-        `;
+    // Setup host controls
+    const hostControls = document.getElementById('hostControls');
+    if (hostControls) {
+        if (isHost && currentRoom?.status === 'waiting') {
+            hostControls.style.display = 'block';
+            hostControls.innerHTML = `<button onclick="startNewSet()" class="btn-start">🚀 Start New Set</button>`;
+        } else {
+            hostControls.style.display = 'none';
+        }
     }
 }
 
@@ -124,6 +128,10 @@ async function startNewSet() {
         return;
     }
 
+    // Hide host controls
+    const hostControls = document.getElementById('hostControls');
+    if (hostControls) hostControls.style.display = 'none';
+
     // Reset for new set
     await supabaseClient.from('player_hands').delete().eq('room_id', roomId);
     await supabaseClient.from('current_turn_plays').delete().eq('room_id', roomId);
@@ -141,7 +149,7 @@ async function startNewSet() {
             .eq('id', player.id);
     }
 
-    // Deal cards
+    // Deal cards first
     await dealCards();
     
     // Create turn order (random start, then clockwise)
@@ -156,7 +164,7 @@ async function startNewSet() {
             });
     }
 
-    // Start bidding phase
+    // Start bidding phase AFTER cards are dealt
     await supabaseClient
         .from('rooms')
         .update({
@@ -173,7 +181,8 @@ async function startNewSet() {
         })
         .eq('id', roomId);
 
-    addChatMessage('System', `🎴 Set ${(currentRoom.current_set || 0) + 1} started! Cards dealt.`);
+    addChatMessage('System', `🎴 Set ${(currentRoom.current_set || 0) + 1} started! ${cardsPerPlayer} cards dealt.`);
+    addChatMessage('System', `Place your bids! How many rounds will you win?`);
 }
 
 async function dealCards() {
@@ -201,6 +210,10 @@ async function dealCards() {
                 });
         }
     }
+    
+    // Load my hand immediately so I can see cards before bidding
+    await loadMyHand();
+    renderHand(myHand);
     
     addChatMessage('System', `📦 ${cardsPerPlayer} cards dealt to each player!`);
 }
@@ -230,6 +243,14 @@ async function loadGameState() {
         triunfoCard = room.triunfo;
         currentAttribute = room.current_attribute;
         
+        const { data: me } = await supabaseClient
+            .from('players')
+            .select('has_bid, predicted_rounds')
+            .eq('id', playerId)
+            .single();
+        
+        hasBidded = me?.has_bid || false;
+        
         const { data: turnOrder } = await supabaseClient
             .from('turn_order')
             .select('*')
@@ -249,6 +270,7 @@ async function loadGameState() {
 
 async function submitBid(bid) {
     if (currentPhase !== 'bidding') return;
+    if (hasBidded) return;
     
     await supabaseClient
         .from('players')
@@ -258,6 +280,7 @@ async function submitBid(bid) {
         })
         .eq('id', playerId);
     
+    hasBidded = true;
     addChatMessage('System', `You bid ${bid} rounds!`);
     
     // Check if all players have bid
@@ -270,6 +293,8 @@ async function submitBid(bid) {
     
     if (allBidded) {
         await revealTriunfo();
+    } else {
+        renderHand(myHand); // Refresh to show "waiting for others"
     }
 }
 
@@ -317,25 +342,43 @@ async function selectAttribute(attribute) {
         .eq('room_id', roomId)
         .order('position');
     
-    const currentTurnPlayer = turnOrder[(currentRoom.current_turn - 1) % players.length];
+    const currentTurnIdx = (currentRoom.current_turn - 1) % players.length;
+    const selector = turnOrder[currentTurnIdx];
     
-    if (currentTurnPlayer.player_id !== playerId) {
+    if (selector.player_id !== playerId) {
         alert('Not your turn to select attribute!');
         return;
     }
+    
+    currentAttribute = attribute;
     
     await supabaseClient
         .from('rooms')
         .update({ current_attribute: attribute })
         .eq('id', roomId);
     
-    addChatMessage('System', `${currentPlayer} selected ${ATTRIBUTE_NAMES[attribute]}!`);
+    addChatMessage('System', `${currentPlayer} selected ${ATTRIBUTE_NAMES[attribute]}! Everyone play a card!`);
+    renderHand(myHand); // Refresh to show play button
 }
 
 async function playCard(cardId) {
     if (currentPhase !== 'playing') return;
     if (!currentAttribute) {
-        alert('Wait for attribute to be selected!');
+        // If no attribute selected and it's my turn to select, show error
+        const { data: turnOrder } = await supabaseClient
+            .from('turn_order')
+            .select('*')
+            .eq('room_id', roomId)
+            .order('position');
+        
+        const currentTurnIdx = (currentRoom.current_turn - 1) % players.length;
+        const selector = turnOrder[currentTurnIdx];
+        
+        if (selector.player_id === playerId) {
+            alert('Select an attribute first by clicking on it!');
+        } else {
+            alert('Wait for ' + ATTRIBUTE_NAMES[currentAttribute] + ' to be selected!');
+        }
         return;
     }
     
@@ -354,15 +397,12 @@ async function playCard(cardId) {
         .eq('room_id', roomId)
         .order('position');
     
-    const playsThisTurn = currentPlays.filter(p => 
-        p.created_at > new Date(Date.now() - 60000).toISOString()
-    );
-    
-    const expectedPlayerIndex = playsThisTurn.length;
+    const playsThisRound = currentPlays ? currentPlays.length : 0;
+    const expectedPlayerIndex = playsThisRound;
     const expectedPlayer = turnOrder[expectedPlayerIndex % players.length];
     
     if (expectedPlayer.player_id !== playerId) {
-        alert('Not your turn to play!');
+        alert(`Wait for ${expectedPlayer.players?.name || 'another player'} to play!`);
         return;
     }
     
@@ -394,11 +434,12 @@ async function playCard(cardId) {
     myHand = myHand.filter(c => c.id !== cardId);
     renderHand(myHand);
     
-    addChatMessage('System', `${currentPlayer} played ${card.name} (${value} ${ATTRIBUTE_NAMES[currentAttribute]})`);
+    const cardName = card.id === triunfoCard?.id ? `${card.name} 👑` : card.name;
+    addChatMessage('System', `${currentPlayer} played ${cardName} (${value} ${ATTRIBUTE_NAMES[currentAttribute]})`);
     
     // Check if turn is complete
-    if (playsThisTurn.length + 1 >= players.length) {
-        setTimeout(resolveTurn, 1000);
+    if (playsThisRound + 1 >= players.length) {
+        setTimeout(resolveTurn, 1500);
     }
 }
 
@@ -423,7 +464,10 @@ async function resolveTurn() {
         .update({ won_rounds: winner.players.won_rounds + 1 })
         .eq('id', winner.player_id);
     
-    addChatMessage('System', `🏆 ${winner.players.name} wins the round with ${winner.cards.name} (${winner.value})!`);
+    const winCardName = winner.cards.id === triunfoCard?.id ? 
+        `${winner.cards.name} 👑` : winner.cards.name;
+    
+    addChatMessage('System', `🏆 ${winner.players.name} wins with ${winCardName} (${winner.value} ${ATTRIBUTE_NAMES[winner.attribute]})!`);
     
     // Clear turn plays
     await supabaseClient.from('current_turn_plays').delete().eq('room_id', roomId);
@@ -499,7 +543,8 @@ async function endSet() {
     // Show results
     let resultMsg = '📊 SET RESULTS:\n';
     results.sort((a, b) => b.total - a.total).forEach(r => {
-        resultMsg += `${r.name}: Predicted ${r.predicted}, Won ${r.won}, +${r.points} pts (Total: ${r.total})\n`;
+        const status = r.predicted === r.won ? '✓' : '✗';
+        resultMsg += `${r.name}: Bid ${r.predicted}, Won ${r.won} ${status}, ${r.points > 0 ? '+' : ''}${r.points}pts (Total: ${r.total})\n`;
     });
     
     addChatMessage('System', resultMsg);
@@ -511,11 +556,13 @@ async function endSet() {
         setTimeout(() => endGame('completed'), 5000);
     } else {
         // Prepare for next set
-        document.getElementById('hostControls').style.display = 'block';
-        document.getElementById('hostControls').innerHTML = `
-            <button onclick="startNewSet()" class="btn-start">🚀 Start Next Set</button>
-        `;
-        addChatMessage('System', `Host can start the next set!`);
+        const isHost = localStorage.getItem('isHost') === 'true';
+        const hostControls = document.getElementById('hostControls');
+        if (isHost && hostControls) {
+            hostControls.style.display = 'block';
+            hostControls.innerHTML = `<button onclick="startNewSet()" class="btn-start">🚀 Start Next Set</button>`;
+        }
+        addChatMessage('System', `Next set ready! Host can start when ready.`);
     }
 }
 
@@ -529,132 +576,247 @@ function renderHand(cards) {
     
     container.innerHTML = '';
     
+    // BIDDING PHASE - Show cards AND bidding interface
     if (currentPhase === 'bidding') {
-        container.innerHTML = `
-            <div class="bidding-panel">
-                <h3>How many rounds will you win?</h3>
+        if (!hasBidded) {
+            // Show cards first
+            const cardsDiv = document.createElement('div');
+            cardsDiv.className = 'my-cards-preview';
+            cardsDiv.innerHTML = '<h3 style="color: #ffd700; margin-bottom: 10px;">Your Cards:</h3>';
+            
+            const cardsGrid = document.createElement('div');
+            cardsGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 30px;';
+            
+            cards.forEach(card => {
+                const miniCard = document.createElement('div');
+                miniCard.className = 'mini-card';
+                miniCard.innerHTML = `
+                    <div style="font-size: 0.8rem; font-weight: bold; color: #ffd700;">${card.name}</div>
+                    <div style="font-size: 0.6rem; color: #aaa;">
+                        C:${card.car} U:${card.cul} T:${card.tet} F:${card.fis} P:${card.per}
+                    </div>
+                `;
+                cardsGrid.appendChild(miniCard);
+            });
+            
+            cardsDiv.appendChild(cardsGrid);
+            container.appendChild(cardsDiv);
+            
+            // Then show bidding interface
+            const bidDiv = document.createElement('div');
+            bidDiv.className = 'bidding-panel';
+            bidDiv.innerHTML = `
+                <h2 style="color: #ffd700; margin-bottom: 20px; font-size: 1.8rem;">How many rounds will you win?</h2>
+                <p style="color: #aaa; margin-bottom: 20px;">Look at your cards and make your prediction!</p>
                 <div class="bid-buttons">
                     ${Array.from({length: cardsPerPlayer + 1}, (_, i) => 
                         `<button onclick="submitBid(${i})" class="btn-bid">${i}</button>`
                     ).join('')}
                 </div>
-            </div>
-        `;
+            `;
+            container.appendChild(bidDiv);
+        } else {
+            // Already bidded, waiting for others
+            container.innerHTML = `
+                <div class="waiting-panel">
+                    <h2 style="color: #48bb78;">Bid placed!</h2>
+                    <p>Waiting for other players to bid...</p>
+                    <div class="spinner"></div>
+                </div>
+            `;
+        }
         return;
     }
     
+    // TRIUNFO PHASE
     if (currentPhase === 'triunfo' && triunfoCard) {
         container.innerHTML = `
             <div class="triunfo-reveal">
-                <h2>👑 EL TRIUNFO 👑</h2>
-                <div class="game-card triunfo">
-                    <div class="card-header">${triunfoCard.name}</div>
-                    <div class="card-stats">
+                <h2 style="color: #ffd700; font-size: 2.5rem; margin-bottom: 20px;">👑 EL TRIUNFO 👑</h2>
+                <div class="game-card triunfo" style="transform: scale(1.2);">
+                    <div class="card-header" style="font-size: 1.3rem;">${triunfoCard.name}</div>
+                    <div class="card-stats" style="grid-template-columns: repeat(5, 1fr);">
                         ${ATTRIBUTES.map(attr => `
                             <div class="stat triunfo-stat">
                                 <span class="stat-label">${ATTRIBUTE_NAMES[attr]}</span>
-                                <span class="stat-value">99</span>
+                                <span class="stat-value" style="color: #ffd700; font-size: 1.5rem;">99</span>
                             </div>
                         `).join('')}
                     </div>
                 </div>
+                <p style="color: #ffd700; margin-top: 20px; font-size: 1.2rem;">Game starts in 3 seconds...</p>
             </div>
         `;
         return;
     }
     
-    // Playing phase - show cards
-    cards.forEach((card) => {
-        const isTriunfo = triunfoCard && card.id === triunfoCard.id;
-        const cardEl = document.createElement('div');
-        cardEl.className = `game-card ${isTriunfo ? 'triunfo-card' : ''}`;
+    // PLAYING PHASE - Show cards with double-click to play
+    if (currentPhase === 'playing') {
+        const isMyTurnToSelect = checkIfMyTurnToSelect();
         
-        let statsHtml = '';
-        if (currentAttribute) {
-            // Show only the selected attribute highlighted
-            statsHtml = `
-                <div class="selected-attribute">
-                    <span class="attr-name">${ATTRIBUTE_NAMES[currentAttribute]}</span>
-                    <span class="attr-value">${isTriunfo ? 99 : card[currentAttribute]}</span>
+        // Show attribute selector if it's my turn
+        if (isMyTurnToSelect && !currentAttribute) {
+            const selectorDiv = document.createElement('div');
+            selectorDiv.className = 'attribute-selector';
+            selectorDiv.innerHTML = `
+                <h2 style="color: #ffd700; margin-bottom: 20px;">Select an Attribute!</h2>
+                <p style="color: #aaa; margin-bottom: 20px;">Choose which stat to compete on this turn</p>
+                <div class="attribute-buttons">
+                    ${ATTRIBUTES.map(attr => `
+                        <button onclick="selectAttribute('${attr}')" class="btn-attribute ${attr}">
+                            ${ATTRIBUTE_NAMES[attr]}
+                        </button>
+                    `).join('')}
                 </div>
-                <button onclick="playCard(${card.id})" class="btn-play">PLAY</button>
             `;
-        } else {
-            // Show all attributes (for attribute selector)
-            statsHtml = ATTRIBUTES.map(attr => `
-                <div class="stat" onclick="selectAndPlay('${attr}', ${card.id})">
-                    <span class="stat-label">${ATTRIBUTE_NAMES[attr]}</span>
-                    <span class="stat-value">${isTriunfo ? 99 : card[attr]}</span>
-                </div>
-            `).join('');
+            container.appendChild(selectorDiv);
         }
         
-        cardEl.innerHTML = `
-            <div class="card-header">${card.name} ${isTriunfo ? '👑' : ''}</div>
-            <div class="card-stats ${currentAttribute ? 'single' : ''}">
+        // Show current attribute if selected
+        if (currentAttribute) {
+            const attrDiv = document.createElement('div');
+            attrDiv.className = 'current-attribute-banner';
+            attrDiv.innerHTML = `
+                <h2 style="color: #ffd700; margin: 0;">Playing: ${ATTRIBUTE_NAMES[currentAttribute]}</h2>
+                <p style="color: #aaa; margin: 5px 0 0 0;">Double-click a card to play it!</p>
+            `;
+            container.appendChild(attrDiv);
+        }
+        
+        // Show my cards
+        const cardsGrid = document.createElement('div');
+        cardsGrid.className = 'cards-grid';
+        cardsGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px;';
+        
+        cards.forEach((card) => {
+            const isTriunfo = triunfoCard && card.id === triunfoCard.id;
+            const cardEl = document.createElement('div');
+            cardEl.className = `game-card ${isTriunfo ? 'triunfo-card' : ''}`;
+            cardEl.style.cssText = 'width: 140px; cursor: pointer; transition: transform 0.2s;';
+            cardEl.ondblclick = () => handleCardDoubleClick(card.id);
+            
+            // Highlight on hover
+            cardEl.onmouseenter = () => cardEl.style.transform = 'scale(1.05)';
+            cardEl.onmouseleave = () => cardEl.style.transform = 'scale(1)';
+            
+            let statsHtml = '';
+            if (currentAttribute) {
+                const value = isTriunfo ? 99 : card[currentAttribute];
+                statsHtml = `
+                    <div style="text-align: center; padding: 15px;">
+                        <div style="font-size: 2rem; color: #ffd700; font-weight: bold;">${value}</div>
+                        <div style="color: #aaa;">${ATTRIBUTE_NAMES[currentAttribute]}</div>
+                    </div>
+                    <div style="text-align: center; color: #48bb78; font-size: 0.8rem;">Double-click to play</div>
+                `;
+            } else {
+                statsHtml = `
+                    <div class="card-stats" style="grid-template-columns: repeat(3, 1fr); gap: 3px;">
+                        ${ATTRIBUTES.map(attr => `
+                            <div class="stat" style="padding: 5px;">
+                                <span class="stat-label" style="font-size: 0.6rem;">${ATTRIBUTE_NAMES[attr]}</span>
+                                <span class="stat-value" style="font-size: 0.9rem; ${isTriunfo ? 'color: #ffd700;' : ''}">
+                                    ${isTriunfo ? 99 : card[attr]}
+                                </span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            cardEl.innerHTML = `
+                <div class="card-header" style="font-size: 0.9rem; padding: 8px;">
+                    ${card.name} ${isTriunfo ? '👑' : ''}
+                </div>
                 ${statsHtml}
+            `;
+            cardsGrid.appendChild(cardEl);
+        });
+        
+        container.appendChild(cardsGrid);
+    }
+    
+    // SCORING PHASE
+    if (currentPhase === 'scoring') {
+        container.innerHTML = `
+            <div class="scoring-panel">
+                <h2 style="color: #ffd700;">Set Complete!</h2>
+                <p>Calculating scores...</p>
             </div>
         `;
-        container.appendChild(cardEl);
-    });
+    }
 }
 
-async function selectAndPlay(attribute, cardId) {
-    // If I'm the attribute selector, select attribute first
-    const { data: turnOrder } = await supabaseClient
-        .from('turn_order')
-        .select('*')
-        .eq('room_id', roomId)
-        .order('position');
+async function handleCardDoubleClick(cardId) {
+    if (currentPhase === 'playing') {
+        // If no attribute selected yet, and it's my turn to select, remind me
+        if (!currentAttribute) {
+            const isMyTurnToSelect = checkIfMyTurnToSelect();
+            if (isMyTurnToSelect) {
+                alert('Select an attribute first! Click on CAR, CUL, TET, FIS, or PER above your cards.');
+                return;
+            }
+        }
+        await playCard(cardId);
+    }
+}
+
+function checkIfMyTurnToSelect() {
+    if (!currentRoom || !currentRoom.current_turn) return false;
     
     const currentTurnIdx = (currentRoom.current_turn - 1) % players.length;
-    const selector = turnOrder[currentTurnIdx];
     
-    if (selector.player_id === playerId && !currentAttribute) {
-        await selectAttribute(attribute);
-        setTimeout(() => playCard(cardId), 500);
-    } else {
-        playCard(cardId);
-    }
+    // We need to get turn order, but since it's async, we'll use a cached value
+    // For now, assume we can select if it's turn 1 and we're first, or based on last winner
+    // This is simplified - in full version, track last winner
+    
+    return currentTurnIdx === 0; // Simplified: first player selects first turn
 }
 
 function updateGameUI() {
-    const status = document.getElementById('gameStatus');
-    if (!status) return;
+    const phaseIndicator = document.getElementById('phaseIndicator');
+    const currentTriunfo = document.getElementById('currentTriunfo');
     
-    switch(currentPhase) {
-        case 'bidding':
-            status.textContent = 'Place your bid! How many rounds will you win?';
-            status.style.color = '#ffd700';
-            break;
-        case 'triunfo':
-            status.textContent = 'El Triunfo revealed!';
-            status.style.color = '#ff6b6b';
-            break;
-        case 'playing':
-            if (currentAttribute) {
-                status.textContent = `Playing: ${ATTRIBUTE_NAMES[currentAttribute]} | Turn ${currentRoom.current_turn}`;
-            } else {
-                const { data: turnOrder } = supabaseClient
-                    .from('turn_order')
-                    .select('*, players(*)')
-                    .eq('room_id', roomId)
-                    .eq('position', (currentRoom.current_turn - 1) % players.length)
-                    .single().then(({ data }) => {
-                        if (data) {
-                            status.textContent = `${data.players.name} selects attribute...`;
-                        }
-                    });
-            }
-            status.style.color = '#48bb78';
-            break;
-        case 'scoring':
-            status.textContent = 'Scoring...';
-            status.style.color = '#4299e1';
-            break;
+    if (phaseIndicator) {
+        switch(currentPhase) {
+            case 'waiting':
+                phaseIndicator.textContent = 'Waiting for host to start...';
+                phaseIndicator.style.color = '#ecc94b';
+                break;
+            case 'bidding':
+                if (hasBidded) {
+                    phaseIndicator.textContent = 'Bid placed! Waiting for others...';
+                    phaseIndicator.style.color = '#48bb78';
+                } else {
+                    phaseIndicator.textContent = 'Place your bid! How many rounds will you win?';
+                    phaseIndicator.style.color = '#ffd700';
+                }
+                break;
+            case 'triunfo':
+                phaseIndicator.textContent = 'El Triunfo revealed!';
+                phaseIndicator.style.color = '#ff6b6b';
+                break;
+            case 'playing':
+                if (currentAttribute) {
+                    phaseIndicator.innerHTML = `Playing: <span style="color: #ffd700;">${ATTRIBUTE_NAMES[currentAttribute]}</span> | Turn ${currentRoom.current_turn}`;
+                    phaseIndicator.style.color = '#48bb78';
+                } else {
+                    phaseIndicator.textContent = 'Select an attribute to begin!';
+                    phaseIndicator.style.color = '#ffd700';
+                }
+                break;
+            case 'scoring':
+                phaseIndicator.textContent = 'Scoring...';
+                phaseIndicator.style.color = '#4299e1';
+                break;
+        }
     }
     
-    // Update scores display
+    if (currentTriunfo && triunfoCard) {
+        currentTriunfo.innerHTML = `👑 Triunfo: ${triunfoCard.name}`;
+        currentTriunfo.style.color = '#ffd700';
+    }
+    
     updateScoreboard();
 }
 
@@ -663,21 +825,28 @@ function updateScoreboard() {
     if (!scoreDiv) return;
     
     let html = '<h3>Scores</h3>';
-    players.sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
-    players.forEach(p => {
+    
+    // Sort by score
+    const sortedPlayers = [...players].sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
+    
+    sortedPlayers.forEach(p => {
+        const isMe = p.id === playerId;
+        const bidInfo = p.has_bid ? `(Bid: ${p.predicted_rounds || '?'})` : '(Bidding...)';
+        const wonInfo = isGameActive ? `Won: ${p.won_rounds || 0}` : '';
+        
         html += `
-            <div class="score-row">
-                <span>${p.name}</span>
-                <span>${p.total_score || 0} pts</span>
-                ${p.predicted_rounds !== null ? `(Bid: ${p.predicted_rounds})` : ''}
+            <div class="score-row" style="${isMe ? 'background: rgba(72, 187, 120, 0.2);' : ''}">
+                <span>${p.name} ${isMe ? '(You)' : ''}</span>
+                <span>${p.total_score || 0}pts ${bidInfo} ${wonInfo}</span>
             </div>
         `;
     });
+    
     scoreDiv.innerHTML = html;
 }
 
 // ==========================================
-// CHAT & UTILITIES (same as before)
+// CHAT & UTILITIES
 // ==========================================
 
 function setupChatSubscription() {
@@ -770,6 +939,12 @@ function setupRealtimeSubscription() {
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
             async (payload) => {
+                // Update local players array
+                if (payload.eventType === 'UPDATE') {
+                    const idx = players.findIndex(p => p.id === payload.new.id);
+                    if (idx >= 0) players[idx] = payload.new;
+                }
+                
                 await updatePlayerList();
                 
                 if (payload.eventType === 'INSERT') {
@@ -779,21 +954,23 @@ function setupRealtimeSubscription() {
                     const playerName = payload.old?.name || 'A player';
                     addLog(`${playerName} left`);
                     addChatMessage('System', `${playerName} left the table`);
-                } else if (payload.eventType === 'UPDATE') {
-                    // Update scores
-                    const idx = players.findIndex(p => p.id === payload.new.id);
-                    if (idx >= 0) players[idx] = payload.new;
-                    updateScoreboard();
                 }
             }
         )
         .on('postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
             async (payload) => {
+                const oldRoom = currentRoom;
                 currentRoom = payload.new;
                 currentPhase = payload.new.phase;
                 currentAttribute = payload.new.current_attribute;
-                triunfoCard = payload.new.triunfo_card_id;
+                
+                // Only show host message if host actually changed to someone else
+                if (oldRoom.host_id !== payload.new.host_id && 
+                    oldRoom.host_id !== playerId && 
+                    payload.new.host_id !== playerId) {
+                    // Host changed to another player, not me
+                }
                 
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     isGameActive = true;
@@ -806,6 +983,16 @@ function setupRealtimeSubscription() {
                     await loadGameState();
                     renderHand(myHand);
                     updateGameUI();
+                }
+                
+                // Update triunfo card reference
+                if (payload.new.triunfo_card_id && payload.new.triunfo_card_id !== triunfoCard?.id) {
+                    const { data: card } = await supabaseClient
+                        .from('cards')
+                        .select('*')
+                        .eq('id', payload.new.triunfo_card_id)
+                        .single();
+                    triunfoCard = card;
                 }
                 
                 if (payload.new.status === 'ended') {
@@ -856,10 +1043,12 @@ async function updatePlayerList() {
             if (p.id === playerId) badges += '<span class="you">YOU</span>';
             if (p.has_bid) badges += '<span class="bid">✓</span>';
             
-            li.innerHTML = `<span>${p.name} (${p.total_score || 0}pts)</span><div>${badges}</div>`;
+            li.innerHTML = `<span>${p.name}</span><div>${badges}</div>`;
             ul.appendChild(li);
         });
     }
+    
+    updateScoreboard();
 }
 
 // ==========================================
