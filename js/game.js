@@ -1,3 +1,10 @@
+// Get player ID (same as lobby)
+let playerId = localStorage.getItem('playerId');
+if (!playerId) {
+    playerId = crypto.randomUUID();
+    localStorage.setItem('playerId', playerId);
+}
+
 let currentRoom = null;
 let currentPlayer = null;
 let roomId = null;

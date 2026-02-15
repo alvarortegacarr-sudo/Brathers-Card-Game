@@ -32,7 +32,7 @@ async function createRoom() {
 
         if (fetchError) throw fetchError;
 
-        // Join as first player (seat 1, host)
+        // Join as first player (seat 1, host) - use upsert to avoid duplicate key error
         const { error: playerError } = await supabaseClient
             .from('players')
             .upsert([{
@@ -40,7 +40,7 @@ async function createRoom() {
                 name: name,
                 seat_number: 1,
                 id: playerId
-            }]);
+            }], { onConflict: 'id' });
 
         if (playerError) throw playerError;
 
@@ -96,6 +96,18 @@ async function joinRoom() {
             return;
         }
 
+        // Check if player already in this room
+        const existingPlayer = players.find(p => p.id === playerId);
+        if (existingPlayer) {
+            // Just redirect to game
+            localStorage.setItem('currentRoom', code);
+            localStorage.setItem('currentPlayer', name);
+            localStorage.setItem('isHost', room.host_id === playerId ? 'true' : 'false');
+            localStorage.setItem('seatNumber', existingPlayer.seat_number.toString());
+            window.location.href = 'game.html';
+            return;
+        }
+
         // Find first available seat
         const occupiedSeats = players.map(p => p.seat_number);
         let seatNumber = 1;
@@ -103,15 +115,15 @@ async function joinRoom() {
             seatNumber++;
         }
 
-        // Join room
+        // Join room - use upsert to avoid duplicate key error
         const { error: joinError } = await supabaseClient
             .from('players')
-            .insert([{
+            .upsert([{
                 room_id: room.id,
                 name: name,
                 seat_number: seatNumber,
                 id: playerId
-            }]);
+            }], { onConflict: 'id' });
 
         if (joinError) throw joinError;
 
