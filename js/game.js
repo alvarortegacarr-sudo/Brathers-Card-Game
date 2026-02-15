@@ -1,6 +1,5 @@
 // ==========================================
-// CARD GAME - PRODUCTION READY
-// Safety features: auto-disconnect, host migration, game end detection
+// CARD GAME - PRODUCTION READY WITH CHAT
 // ==========================================
 
 // Get player ID
@@ -15,6 +14,7 @@ let currentRoom = null;
 let currentPlayer = null;
 let roomId = null;
 let subscription = null;
+let chatSubscription = null;
 let players = [];
 let gameLoop = null;
 let heartbeatInterval = null;
@@ -33,7 +33,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // Check if room still exists and is valid
     const { data: room, error } = await supabaseClient
         .from('rooms')
         .select('*')
@@ -50,7 +49,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // Check if player is still in this room
     const { data: playerCheck } = await supabaseClient
         .from('players')
         .select('*')
@@ -63,16 +61,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // Initialize game
     currentRoom = room;
     roomId = room.id;
     
     setupUI();
+    setupChatInput(); // Setup chat input here
     await updatePlayerList();
     setupRealtimeSubscription();
+    setupChatSubscription();
+    loadChatHistory();
     startGameLoop();
     
     addLog('Connected to table');
+    addChatMessage('System', 'Welcome to the table! Use the chat below to communicate.');
 });
 
 function setupUI() {
@@ -84,6 +85,115 @@ function setupUI() {
     if (isHost && currentRoom?.status === 'waiting') {
         document.getElementById('hostControls').style.display = 'block';
     }
+}
+
+// Setup chat input listeners
+function setupChatInput() {
+    const chatInput = document.getElementById('chatInput');
+    const sendButton = document.querySelector('.btn-chat');
+    
+    if (chatInput) {
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendChatMessage();
+        });
+    }
+    
+    if (sendButton) {
+        sendButton.addEventListener('click', sendChatMessage);
+    }
+}
+
+// ==========================================
+// CHAT SYSTEM
+// ==========================================
+
+function setupChatSubscription() {
+    chatSubscription = supabaseClient
+        .channel(`chat:${roomId}`)
+        .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` },
+            (payload) => {
+                const msg = payload.new;
+                if (msg.player_id !== playerId) {
+                    addChatMessage(msg.player_name, msg.message, false);
+                }
+            }
+        )
+        .subscribe();
+}
+
+async function loadChatHistory() {
+    const { data: messages } = await supabaseClient
+        .from('chat_messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true })
+        .limit(50);
+    
+    if (messages) {
+        messages.forEach(msg => {
+            if (msg.player_id !== playerId) {
+                addChatMessage(msg.player_name, msg.message, false);
+            }
+        });
+    }
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    if (!input) return;
+    
+    const message = input.value.trim();
+    if (!message) return;
+    
+    // Clear input immediately for better UX
+    input.value = '';
+    
+    // Add to UI immediately
+    addChatMessage('You', message, true);
+    
+    // Send to database
+    const { error } = await supabaseClient
+        .from('chat_messages')
+        .insert([{
+            room_id: roomId,
+            player_id: playerId,
+            player_name: currentPlayer,
+            message: message
+        }]);
+    
+    if (error) {
+        console.error('Failed to send message:', error);
+        addChatMessage('System', 'Failed to send message', false);
+    }
+}
+
+function addChatMessage(sender, message, isOwn = false) {
+    const chatLog = document.getElementById('chatLog');
+    if (!chatLog) return;
+    
+    const entry = document.createElement('div');
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    let senderClass = 'chat-sender';
+    if (sender === 'System') senderClass += ' system';
+    if (isOwn) senderClass += ' own';
+    
+    entry.className = 'chat-entry';
+    entry.innerHTML = `
+        <span class="chat-time">[${time}]</span>
+        <span class="${senderClass}">${escapeHtml(sender)}:</span>
+        <span class="chat-text">${escapeHtml(message)}</span>
+    `;
+    
+    chatLog.appendChild(entry);
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // ==========================================
@@ -100,11 +210,11 @@ function setupRealtimeSubscription() {
                 
                 if (payload.eventType === 'INSERT') {
                     addLog(`${payload.new.name} joined the table`);
+                    addChatMessage('System', `${payload.new.name} joined the table`);
                 } else if (payload.eventType === 'DELETE') {
                     const playerName = payload.old?.name || 'A player';
                     addLog(`${playerName} left the table`);
-                    
-                    // Check if we need to end game
+                    addChatMessage('System', `${playerName} left the table`);
                     await checkGameEndConditions();
                 }
             }
@@ -114,22 +224,20 @@ function setupRealtimeSubscription() {
             async (payload) => {
                 currentRoom = payload.new;
                 
-                // Game started
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     document.getElementById('gameStatus').textContent = 'Game in progress';
                     document.getElementById('hostControls').style.display = 'none';
                     addLog('Game started!');
+                    addChatMessage('System', '🎮 Game started! Good luck!');
                     isGameActive = true;
                     initializeGame();
                 }
                 
-                // Game ended
                 if (payload.new.status === 'ended') {
                     isGameActive = false;
                     endGame(payload.new.ended_reason);
                 }
                 
-                // Host changed
                 if (payload.old.host_id !== payload.new.host_id) {
                     const { data: newHost } = await supabaseClient
                         .from('players')
@@ -138,8 +246,8 @@ function setupRealtimeSubscription() {
                         .single();
                     
                     addLog(`${newHost?.name || 'New host'} is now the host`);
+                    addChatMessage('System', `👑 ${newHost?.name || 'New host'} is now the host`);
                     
-                    // Update UI if we became host
                     if (payload.new.host_id === playerId) {
                         localStorage.setItem('isHost', 'true');
                         if (currentRoom.status === 'waiting') {
@@ -167,7 +275,6 @@ async function updatePlayerList() {
 
     players = playersData;
     
-    // Update table seats
     document.querySelectorAll('.seat').forEach(seat => {
         const seatNum = parseInt(seat.id.split('-')[1]);
         const player = players.find(p => p.seat_number === seatNum);
@@ -188,24 +295,27 @@ async function updatePlayerList() {
         }
     });
 
-    // Update side panel
     const ul = document.getElementById('playersUl');
-    ul.innerHTML = '';
-    players.forEach(p => {
-        const li = document.createElement('li');
-        let badges = '';
-        if (p.id === currentRoom?.host_id) badges += '<span class="host">👑 HOST</span>';
-        if (p.id === playerId) badges += '<span class="you"> YOU</span>';
-        
-        li.innerHTML = `<span>${p.name} (Seat ${p.seat_number})</span><div>${badges}</div>`;
-        ul.appendChild(li);
-    });
+    if (ul) {
+        ul.innerHTML = '';
+        players.forEach(p => {
+            const li = document.createElement('li');
+            let badges = '';
+            if (p.id === currentRoom?.host_id) badges += '<span class="host">👑 HOST</span>';
+            if (p.id === playerId) badges += '<span class="you"> YOU</span>';
+            
+            li.innerHTML = `<span>${p.name} (Seat ${p.seat_number})</span><div>${badges}</div>`;
+            ul.appendChild(li);
+        });
+    }
 
-    document.querySelector('.player-list h3').textContent = `Players (${players.length}/5)`;
+    const playerListHeader = document.querySelector('.player-list h3');
+    if (playerListHeader) {
+        playerListHeader.textContent = `Players (${players.length}/5)`;
+    }
     
-    // Update status
     const status = document.getElementById('gameStatus');
-    if (!isGameActive) {
+    if (status && !isGameActive) {
         if (players.length < 2) {
             status.textContent = 'Waiting for more players...';
             status.style.color = '#ecc94b';
@@ -221,7 +331,6 @@ async function updatePlayerList() {
 // ==========================================
 
 function startGameLoop() {
-    // Heartbeat every 3 seconds
     heartbeatInterval = setInterval(async () => {
         await supabaseClient
             .from('players')
@@ -229,7 +338,6 @@ function startGameLoop() {
             .eq('id', playerId);
     }, 3000);
     
-    // Cleanup check every 5 seconds
     gameLoop = setInterval(async () => {
         await cleanupDisconnectedPlayers();
         await checkGameEndConditions();
@@ -237,7 +345,6 @@ function startGameLoop() {
 }
 
 async function cleanupDisconnectedPlayers() {
-    // Mark inactive players (not seen for 10 seconds)
     const cutoffTime = new Date(Date.now() - 10000).toISOString();
     
     const { data: inactivePlayers } = await supabaseClient
@@ -265,26 +372,22 @@ async function checkGameEndConditions() {
     
     const activePlayers = room.players || [];
     
-    // Condition 1: No players left
     if (activePlayers.length === 0) {
         await endGameServer('empty');
         return;
     }
     
-    // Condition 2: Host left during game
     const hostStillHere = activePlayers.some(p => p.id === room.host_id);
     if (!hostStillHere && room.status === 'playing') {
         await endGameServer('host_left');
         return;
     }
     
-    // Condition 3: Only one player left during game
     if (activePlayers.length === 1 && room.status === 'playing') {
         await endGameServer('insufficient_players');
         return;
     }
     
-    // Condition 4: Host left in lobby - transfer host
     if (!hostStillHere && room.status === 'waiting' && activePlayers.length > 0) {
         const newHost = activePlayers[0];
         await supabaseClient
@@ -322,6 +425,7 @@ function endGame(reason) {
     }
     
     addLog(message);
+    addChatMessage('System', message);
     alert(message);
     
     setTimeout(() => {
@@ -352,7 +456,6 @@ async function startGame() {
 function initializeGame() {
     console.log('Game started - Add your custom game logic here');
     dealInitialCards();
-    // Add your turn system, scoring, etc. here
 }
 
 function dealInitialCards() {
@@ -373,6 +476,8 @@ function dealInitialCards() {
 
 function renderHand(cards) {
     const container = document.querySelector('.hand-container');
+    if (!container) return;
+    
     container.innerHTML = '';
     
     cards.forEach((card, index) => {
@@ -393,7 +498,6 @@ function gameAction(action) {
     console.log('Action:', action);
     addLog(`You chose to ${action}`);
     broadcastAction(action);
-    // Add your turn logic here
 }
 
 async function broadcastAction(action) {
@@ -412,6 +516,8 @@ async function broadcastAction(action) {
 
 function addLog(message) {
     const log = document.getElementById('gameLog');
+    if (!log) return;
+    
     const entry = document.createElement('div');
     entry.className = 'log-entry';
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
@@ -441,32 +547,24 @@ function redirectToLobby(message) {
 // ==========================================
 
 async function leaveGame() {
-    // Stop all intervals
     if (gameLoop) clearInterval(gameLoop);
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     
-    // Unsubscribe from realtime
-    if (subscription) {
-        await subscription.unsubscribe();
-    }
+    if (subscription) await subscription.unsubscribe();
+    if (chatSubscription) await chatSubscription.unsubscribe();
     
-    // If host leaves during game, end it
     if (currentRoom?.host_id === playerId && isGameActive) {
         await endGameServer('host_left');
     }
     
-    // Remove player
     await supabaseClient.from('players').delete().eq('id', playerId);
     
-    // Cleanup local storage and redirect
     redirectToLobby();
 }
 
-// Emergency cleanup on page close
-window.addEventListener('beforeunload', async (e) => {
+window.addEventListener('beforeunload', async () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (gameLoop) clearInterval(gameLoop);
     
-    // Try to clean up (may not complete before page closes)
     await supabaseClient.from('players').delete().eq('id', playerId);
 });
