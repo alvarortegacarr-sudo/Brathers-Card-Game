@@ -1,5 +1,5 @@
 // ==========================================
-// EL TRIUNFO CARD GAME - FIXED VERSION
+// EL TRIUNFO CARD GAME - FIXED VERSION 2
 // ==========================================
 
 let playerId = localStorage.getItem('playerId');
@@ -25,7 +25,8 @@ let currentAttribute = null;
 let cardsPerPlayer = 0;
 let hasBidded = false;
 let myTurnOrder = null;
-let currentRoundPlays = []; // Track plays in current round
+let currentRoundPlays = [];
+let isStartingGame = false; // Prevent double-clicks
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
 const ATTRIBUTE_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
@@ -67,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         roomId = room.id;
         players = room.players || [];
         cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
+        isGameActive = room.status === 'playing';
         
         setupUI();
         setupChatInput();
@@ -77,7 +79,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         startHeartbeat();
         
         if (room.status === 'playing') {
-            isGameActive = true;
             currentPhase = room.phase || 'bidding';
             await loadGameState();
         }
@@ -102,8 +103,10 @@ function updateHostControls() {
     
     const isHost = localStorage.getItem('isHost') === 'true';
     
-    if (isGameActive || (currentRoom && currentRoom.status === 'playing')) {
+    // Force hide if game is active or starting
+    if (isGameActive || isStartingGame || (currentRoom && currentRoom.status === 'playing')) {
         hostControls.style.display = 'none';
+        console.log('Hiding host controls - game active:', isGameActive, 'starting:', isStartingGame, 'status:', currentRoom?.status);
         return;
     }
     
@@ -111,8 +114,8 @@ function updateHostControls() {
         hostControls.style.display = 'block';
         const count = players.length || 1;
         hostControls.innerHTML = `
-            <button onclick="startNewSet()" class="btn-start">
-                🚀 Start Game (${count} player${count !== 1 ? 's' : ''})
+            <button onclick="startNewSet()" class="btn-start" ${isStartingGame ? 'disabled' : ''}>
+                ${isStartingGame ? '⏳ Starting...' : `🚀 Start Game (${count} player${count !== 1 ? 's' : ''})`}
             </button>
         `;
     } else {
@@ -134,13 +137,20 @@ function setupChatInput() {
 // ==========================================
 
 async function startNewSet() {
+    if (isStartingGame) return; // Prevent double-clicks
     if (players.length < 2) {
         alert('Need at least 2 players to start!');
         return;
     }
 
+    isStartingGame = true;
+    updateHostControls(); // Update UI immediately to show "Starting..."
+    
+    // Hide host controls immediately
     const hostControls = document.getElementById('hostControls');
-    if (hostControls) hostControls.style.display = 'none';
+    if (hostControls) {
+        hostControls.style.display = 'none';
+    }
 
     try {
         // Clean up previous game data
@@ -190,10 +200,15 @@ async function startNewSet() {
                 current_turn: 0,
                 triunfo_card_id: randomCard.id,
                 current_attribute: null,
-                current_round_starter: 0 // Track who starts each round
+                current_round_starter: 0
             })
             .eq('id', roomId);
 
+        // Set local state immediately
+        isGameActive = true;
+        currentPhase = 'triunfo';
+        currentRoom.status = 'playing';
+        
         addChatMessage('System', `🎴 Set ${(currentRoom.current_set || 0) + 1} started!`);
         addChatMessage('System', `👑 El Triunfo is ${randomCard.name}! All its attributes are 99!`);
         
@@ -204,10 +219,14 @@ async function startNewSet() {
                 .update({ phase: 'bidding' })
                 .eq('id', roomId);
             addChatMessage('System', `Place your bids! How many rounds will you win?`);
+            isStartingGame = false; // Reset flag
         }, 2000);
         
     } catch (err) {
         console.error('Start game error:', err);
+        isStartingGame = false;
+        isGameActive = false;
+        updateHostControls(); // Show button again on error
         alert('Failed to start game');
     }
 }
@@ -314,15 +333,27 @@ async function loadGameState() {
 }
 
 // ==========================================
-// BIDDING PHASE
+// BIDDING PHASE - FIXED
 // ==========================================
 
 async function submitBid(bid) {
-    if (currentPhase !== 'bidding') return;
-    if (hasBidded) return;
+    // Double-check phase before submitting
+    if (currentPhase !== 'bidding') {
+        console.log('Cannot bid: phase is', currentPhase);
+        return;
+    }
+    if (hasBidded) {
+        console.log('Already bid');
+        return;
+    }
     
     try {
-        await supabaseClient
+        // Update local state immediately for responsiveness
+        hasBidded = true;
+        renderHand(myHand); // Show waiting screen immediately
+        
+        // Update database
+        const { error } = await supabaseClient
             .from('players')
             .update({ 
                 predicted_rounds: bid, 
@@ -330,34 +361,60 @@ async function submitBid(bid) {
             })
             .eq('id', playerId);
         
-        hasBidded = true;
+        if (error) {
+            console.error('Bid update error:', error);
+            hasBidded = false; // Revert on error
+            renderHand(myHand);
+            return;
+        }
+        
         addChatMessage('System', `You bid ${bid} rounds!`);
         
-        // Check if all players have bid
-        const { data: allPlayers } = await supabaseClient
-            .from('players')
-            .select('*')
-            .eq('room_id', roomId);
+        // Check if all players have bid - with retry logic
+        let attempts = 0;
+        const checkAllBidded = async () => {
+            const { data: allPlayers, error: fetchError } = await supabaseClient
+                .from('players')
+                .select('*')
+                .eq('room_id', roomId);
+            
+            if (fetchError) {
+                console.error('Fetch error:', fetchError);
+                if (attempts < 3) {
+                    attempts++;
+                    setTimeout(checkAllBidded, 500);
+                }
+                return;
+            }
+            
+            const totalPlayers = allPlayers.length;
+            const biddedCount = allPlayers.filter(p => p.has_bid).length;
+            
+            console.log(`Bidding progress: ${biddedCount}/${totalPlayers}`);
+            
+            if (biddedCount >= totalPlayers) {
+                // All bid, start playing
+                console.log('All players bid! Starting game...');
+                await supabaseClient
+                    .from('rooms')
+                    .update({
+                        phase: 'playing',
+                        current_turn: 1,
+                        current_attribute: null,
+                        current_round_starter: 0
+                    })
+                    .eq('id', roomId);
+                addChatMessage('System', `🎮 Round 1 begins! First player selects attribute and plays card.`);
+            }
+        };
         
-        const allBidded = allPlayers.every(p => p.has_bid);
+        // Small delay to ensure database consistency
+        setTimeout(checkAllBidded, 300);
         
-        if (allBidded) {
-            // All bid, start playing
-            await supabaseClient
-                .from('rooms')
-                .update({
-                    phase: 'playing',
-                    current_turn: 1,
-                    current_attribute: null,
-                    current_round_starter: 0
-                })
-                .eq('id', roomId);
-            addChatMessage('System', `🎮 Round 1 begins! First player selects attribute and plays card.`);
-        } else {
-            renderHand(myHand);
-        }
     } catch (err) {
         console.error('Submit bid error:', err);
+        hasBidded = false; // Revert on error
+        renderHand(myHand);
     }
 }
 
@@ -369,7 +426,6 @@ async function selectAttribute(attribute) {
     if (currentPhase !== 'playing') return;
     
     try {
-        // Check if it's my turn to select (I must be the round starter and haven't selected yet)
         const roundStarter = currentRoom.current_round_starter || 0;
         if (myPosition !== roundStarter) {
             alert('Only the round starter can select the attribute!');
@@ -401,7 +457,6 @@ async function playCard(cardId) {
     if (!card) return;
     
     try {
-        // Get current plays
         const { data: currentPlays } = await supabaseClient
             .from('current_turn_plays')
             .select('*, players(*)')
@@ -411,18 +466,14 @@ async function playCard(cardId) {
         const playsThisRound = currentPlays ? currentPlays.length : 0;
         const roundStarter = currentRoom.current_round_starter || 0;
         
-        // Determine whose turn it is
         let expectedPosition;
         if (playsThisRound === 0) {
-            // First play of round - must be round starter
             expectedPosition = roundStarter;
         } else {
-            // Subsequent plays - go clockwise from starter
             expectedPosition = (roundStarter + playsThisRound) % players.length;
         }
         
         if (myPosition !== expectedPosition) {
-            // Find who should play
             const { data: turnOrder } = await supabaseClient
                 .from('turn_order')
                 .select('*, players(*)')
@@ -435,19 +486,16 @@ async function playCard(cardId) {
             return;
         }
         
-        // If I'm the starter, I must select attribute first
         if (playsThisRound === 0 && !currentAttribute) {
             alert('Select an attribute first!');
             return;
         }
         
-        // Calculate value (99 if it's El Triunfo)
         let value = card[currentAttribute];
         if (triunfoCard && card.id === triunfoCard.id) {
             value = 99;
         }
         
-        // Play the card
         await supabaseClient
             .from('current_turn_plays')
             .insert({
@@ -456,10 +504,9 @@ async function playCard(cardId) {
                 card_id: cardId,
                 attribute: currentAttribute,
                 value: value,
-                total_stats: calculateTotalStats(card) // For tiebreaker
+                total_stats: calculateTotalStats(card)
             });
         
-        // Mark card as played using the hand record ID
         const handRecord = myHand.find(c => c.id === cardId);
         if (handRecord && handRecord.hand_record_id) {
             await supabaseClient
@@ -468,14 +515,12 @@ async function playCard(cardId) {
                 .eq('id', handRecord.hand_record_id);
         }
         
-        // Update local hand
         myHand = myHand.filter(c => c.id !== cardId);
         renderHand(myHand);
         
         const cardName = card.id === triunfoCard?.id ? `${card.name} 👑` : card.name;
         addChatMessage('System', `${currentPlayer} played ${cardName} (${value} ${ATTRIBUTE_NAMES[currentAttribute]})`);
         
-        // Check if round is complete
         if (playsThisRound + 1 >= players.length) {
             setTimeout(resolveTurn, 1500);
         }
@@ -498,11 +543,9 @@ async function resolveTurn() {
         
         if (!plays || plays.length < players.length) return;
         
-        // Find winner with tiebreaker
         const winner = plays.reduce((max, play) => {
             if (play.value > max.value) return play;
             if (play.value === max.value) {
-                // Tiebreaker: highest total stats
                 const playTotal = calculateTotalStats(play.cards);
                 const maxTotal = calculateTotalStats(max.cards);
                 if (playTotal > maxTotal) return play;
@@ -510,7 +553,6 @@ async function resolveTurn() {
             return max;
         });
         
-        // Award round to winner
         await supabaseClient
             .from('players')
             .update({ won_rounds: winner.players.won_rounds + 1 })
@@ -521,16 +563,13 @@ async function resolveTurn() {
         
         addChatMessage('System', `🏆 ${winner.players.name} wins with ${winCardName}!`);
         
-        // Clear turn plays
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', roomId);
         
-        // Check if set is over - count cards per player
         const { data: remainingByPlayer } = await supabaseClient
             .from('player_hands')
             .select('player_id, played')
             .eq('room_id', roomId);
         
-        // Group by player and count unplayed
         const unplayedCounts = {};
         remainingByPlayer?.forEach(h => {
             if (!unplayedCounts[h.player_id]) unplayedCounts[h.player_id] = 0;
@@ -542,7 +581,6 @@ async function resolveTurn() {
         if (totalUnplayed === 0) {
             await endSet();
         } else {
-            // Next turn - winner starts next round
             const { data: winnerTurnOrder } = await supabaseClient
                 .from('turn_order')
                 .select('position')
@@ -575,7 +613,7 @@ async function resolveTurn() {
 
 async function endSet() {
     currentPhase = 'scoring';
-    renderHand([]); // Show scoring screen
+    renderHand([]);
     
     try {
         await supabaseClient.from('rooms').update({ phase: 'scoring' }).eq('id', roomId);
@@ -629,13 +667,13 @@ async function endSet() {
             addChatMessage('System', `🎉 ${winner.name} WINS THE GAME!`);
             setTimeout(() => endGame('completed'), 5000);
         } else {
-            // Reset for next set
             isGameActive = false;
             currentPhase = 'waiting';
             hasBidded = false;
             myHand = [];
             triunfoCard = null;
             currentAttribute = null;
+            currentRoom.status = 'waiting';
             
             const isHost = localStorage.getItem('isHost') === 'true';
             const hostControls = document.getElementById('hostControls');
@@ -712,8 +750,10 @@ function renderTriunfoPhase(container) {
 }
 
 function renderBiddingPhase(container, cards) {
+    // Ensure cardsPerPlayer is correct
+    const actualCardCount = cards.length || cardsPerPlayer;
+    
     if (!hasBidded) {
-        // Show cards preview
         const previewDiv = document.createElement('div');
         previewDiv.style.cssText = 'margin-bottom: 20px;';
         previewDiv.innerHTML = '<h3 style="color: var(--accent-gold); margin-bottom: 15px; text-align: center;">Your Cards</h3>';
@@ -736,15 +776,15 @@ function renderBiddingPhase(container, cards) {
         previewDiv.appendChild(cardsGrid);
         container.appendChild(previewDiv);
         
-        // Bidding interface
+        // Bidding interface - use actual card count
         const bidDiv = document.createElement('div');
         bidDiv.className = 'bidding-panel';
         bidDiv.innerHTML = `
             <h2>How many rounds will you win?</h2>
-            <p>You have ${cards.length} cards</p>
+            <p>You have ${actualCardCount} cards</p>
             <div class="bid-buttons">
-                ${Array.from({length: cards.length + 1}, (_, i) => 
-                    `<button onclick="submitBid(${i})" class="btn-bid">${i}</button>`
+                ${Array.from({length: actualCardCount + 1}, (_, i) => 
+                    `<button onclick="submitBid(${i})" class="btn-bid" style="width: 60px; height: 60px; font-size: 1.4rem; font-weight: bold; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; border-radius: 12px; color: white; cursor: pointer; transition: all 0.2s;">${i}</button>`
                 ).join('')}
             </div>
         `;
@@ -771,7 +811,7 @@ function renderPlayingPhase(container, cards) {
             <h3>You start this round! Select an attribute:</h3>
             <div class="attribute-buttons">
                 ${ATTRIBUTES.map(attr => `
-                    <button onclick="selectAttribute('${attr}')" class="btn-attribute ${attr}">
+                    <button onclick="selectAttribute('${attr}')" class="btn-attribute ${attr}" style="padding: 12px 24px; font-size: 1.1rem; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase;">
                         ${ATTRIBUTE_NAMES[attr]}
                     </button>
                 `).join('')}
@@ -801,7 +841,7 @@ function renderPlayingPhase(container, cards) {
         const isTriunfo = triunfoCard && card.id === triunfoCard.id;
         const cardEl = document.createElement('div');
         cardEl.className = `game-card ${isTriunfo ? 'triunfo' : ''}`;
-        cardEl.style.cssText = 'width: 140px; cursor: pointer; transition: transform 0.2s;';
+        cardEl.style.cssText = 'width: 140px; cursor: pointer; transition: transform 0.2s; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; border-radius: 12px; padding: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);';
         
         cardEl.ondblclick = () => playCard(card.id);
         cardEl.onmouseenter = () => cardEl.style.transform = 'scale(1.05) translateY(-8px)';
@@ -818,11 +858,11 @@ function renderPlayingPhase(container, cards) {
             `;
         } else {
             statsHtml = `
-                <div class="card-stats" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;">
+                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;">
                     ${ATTRIBUTES.map(attr => `
-                        <div class="stat" style="background: rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 2px; text-align: center;">
-                            <span class="stat-label" style="display: block; font-size: 0.6rem; color: var(--text-secondary); margin-bottom: 2px;">${ATTRIBUTE_NAMES[attr]}</span>
-                            <span class="stat-value" style="display: block; font-size: 0.9rem; font-weight: bold; color: ${isTriunfo ? 'var(--accent-gold)' : 'var(--accent-green)'};">
+                        <div style="background: rgba(255,255,255,0.05); border-radius: 6px; padding: 6px 2px; text-align: center;">
+                            <span style="display: block; font-size: 0.6rem; color: var(--text-secondary); margin-bottom: 2px;">${ATTRIBUTE_NAMES[attr]}</span>
+                            <span style="display: block; font-size: 0.9rem; font-weight: bold; color: ${isTriunfo ? 'var(--accent-gold)' : 'var(--accent-green)'};">
                                 ${isTriunfo ? 99 : card[attr]}
                             </span>
                         </div>
@@ -832,7 +872,7 @@ function renderPlayingPhase(container, cards) {
         }
         
         cardEl.innerHTML = `
-            <div class="card-header" style="font-weight: bold; font-size: 0.9rem; text-align: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--accent-gold);">
+            <div style="font-weight: bold; font-size: 0.9rem; text-align: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); color: var(--accent-gold);">
                 ${card.name} ${isTriunfo ? '👑' : ''}
             </div>
             ${statsHtml}
@@ -869,7 +909,7 @@ function updateGameUI() {
                     phaseIndicator.textContent = `Playing: ${ATTRIBUTE_NAMES[currentAttribute]} | Round ${currentRoom?.current_turn || 1}`;
                     phaseIndicator.style.color = '#48bb78';
                 } else {
-                    phaseIndicator.textContent = isStarter ? 'Select an attribute and play!' : 'Waiting for attribute...';
+                    phaseIndicator.textContent = isStarter ? 'Select attribute & play!' : 'Waiting for attribute...';
                     phaseIndicator.style.color = isStarter ? '#ffd700' : '#ecc94b';
                 }
                 break;
@@ -891,7 +931,7 @@ function updateGameUI() {
     
     if (triunfoDisplay && triunfoCard) {
         triunfoDisplay.innerHTML = `
-            <div class="game-card triunfo" style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 8px;">
+            <div style="width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 8px; background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%); border: 3px solid var(--accent-gold); border-radius: 12px; box-shadow: 0 0 30px rgba(255,215,0,0.3);">
                 <div style="font-size: 0.7rem; color: var(--accent-gold); font-weight: bold; text-align: center;">${triunfoCard.name}</div>
                 <div style="font-size: 2rem;">👑</div>
                 <div style="font-size: 0.6rem; color: var(--text-secondary);">99 ALL</div>
@@ -900,6 +940,7 @@ function updateGameUI() {
     }
     
     updateScoreboard();
+    updateHostControls(); // Ensure button state is correct
 }
 
 function updateScoreboard() {
@@ -929,7 +970,7 @@ function updateScoreboard() {
 }
 
 // ==========================================
-// CHAT & UTILITIES (unchanged)
+// CHAT & UTILITIES
 // ==========================================
 
 function setupChatSubscription() {
@@ -991,10 +1032,10 @@ function addChatMessage(sender, message, isOwn = false) {
     const entry = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
-    entry.className = `chat-entry ${sender === 'System' ? 'system' : ''}`;
+    entry.style.cssText = 'padding: 0.4rem; background: rgba(255,255,255,0.03); border-radius: 6px; line-height: 1.4; font-size: 0.85rem;';
     entry.innerHTML = `
-        <span class="time">[${time}]</span>
-        <span class="sender">${escapeHtml(sender)}:</span>
+        <span style="color: var(--text-secondary); font-size: 0.75rem;">[${time}]</span>
+        <span style="font-weight: bold; color: ${sender === 'System' ? 'var(--accent-gold)' : 'var(--accent-blue)'};">${escapeHtml(sender)}:</span>
         <span>${escapeHtml(message)}</span>
     `;
     
@@ -1009,7 +1050,7 @@ function escapeHtml(text) {
 }
 
 // ==========================================
-// REALTIME & SYNC
+// REALTIME & SYNC - FIXED
 // ==========================================
 
 function setupRealtimeSubscription() {
@@ -1021,6 +1062,14 @@ function setupRealtimeSubscription() {
                 if (payload.eventType === 'UPDATE') {
                     const idx = players.findIndex(p => p.id === payload.new.id);
                     if (idx >= 0) players[idx] = payload.new;
+                    
+                    // If this is me updating has_bid, refresh UI
+                    if (payload.new.id === playerId) {
+                        hasBidded = payload.new.has_bid;
+                        if (currentPhase === 'bidding') {
+                            renderHand(myHand);
+                        }
+                    }
                 } else if (payload.eventType === 'INSERT') {
                     players.push(payload.new);
                     cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
@@ -1043,25 +1092,34 @@ function setupRealtimeSubscription() {
         .on('postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
             async (payload) => {
+                console.log('Room update:', payload.new.phase, 'old:', payload.old.phase);
+                
                 currentRoom = payload.new;
                 currentPhase = payload.new.phase;
                 currentAttribute = payload.new.current_attribute;
                 
-                // Handle phase transitions
-                if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
+                // IMPORTANT: Update isGameActive immediately when status changes
+                if (payload.new.status === 'playing') {
                     isGameActive = true;
-                    hasBidded = false;
-                    myHand = [];
-                    cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
+                } else if (payload.new.status === 'waiting') {
+                    isGameActive = false;
                 }
                 
+                // Hide host controls immediately when game starts
+                if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
+                    isStartingGame = false;
+                    const hostControls = document.getElementById('hostControls');
+                    if (hostControls) hostControls.style.display = 'none';
+                }
+                
+                // Handle phase transitions
                 if (payload.new.phase === 'bidding' && payload.old.phase === 'triunfo') {
-                    // Transition from triunfo to bidding - reload hand
+                    currentPhase = 'bidding';
                     await loadMyHand();
                 }
                 
                 if (payload.new.phase === 'playing' && payload.old.phase === 'bidding') {
-                    // Transition to playing
+                    currentPhase = 'playing';
                     await loadGameState();
                 }
                 
@@ -1081,6 +1139,10 @@ function setupRealtimeSubscription() {
                 if (payload.new.status === 'ended') {
                     endGame(payload.new.ended_reason);
                 }
+                
+                // Always update host controls on room changes
+                updateHostControls();
+                updateGameUI();
             }
         )
         .subscribe();
@@ -1121,10 +1183,12 @@ async function updatePlayerList() {
         ul.innerHTML = '';
         players.forEach(p => {
             const li = document.createElement('li');
+            li.style.cssText = 'padding: 0.6rem; margin-bottom: 0.4rem; background: rgba(255,255,255,0.03); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;';
+            
             let badges = '';
-            if (p.id === currentRoom?.host_id) badges += '<span class="host">👑</span>';
-            if (p.id === playerId) badges += '<span class="you">YOU</span>';
-            if (p.has_bid) badges += '<span class="bid">✓</span>';
+            if (p.id === currentRoom?.host_id) badges += '<span style="color: var(--accent-gold); margin-left: 4px;">👑</span>';
+            if (p.id === playerId) badges += '<span style="color: var(--accent-green); margin-left: 4px;">YOU</span>';
+            if (p.has_bid) badges += '<span style="color: var(--accent-green); margin-left: 4px;">✓</span>';
             
             li.innerHTML = `<span>${p.name}</span><div>${badges}</div>`;
             ul.appendChild(li);
@@ -1151,7 +1215,7 @@ function addLog(message) {
     const log = document.getElementById('gameLog');
     if (!log) return;
     const entry = document.createElement('div');
-    entry.className = 'log-entry';
+    entry.style.cssText = 'padding: 0.4rem; margin-bottom: 0.3rem; border-left: 3px solid var(--accent-blue); padding-left: 0.6rem; background: rgba(255,255,255,0.02); border-radius: 0 6px 6px 0; color: var(--text-secondary); font-size: 0.85rem;';
     entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
