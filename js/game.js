@@ -10,6 +10,7 @@ let currentPlayer = null;
 let roomId = null;
 let subscription = null;
 let players = [];
+let disconnectChecker = null;
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
@@ -31,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadRoom(roomCode);
     setupRealtimeSubscription();
     startHeartbeat();
+    startDisconnectChecker(); // Start checking for disconnected players
 });
 
 async function loadRoom(code) {
@@ -117,7 +119,6 @@ async function updatePlayerList() {
 }
 
 function setupRealtimeSubscription() {
-    // Subscribe to players changes
     subscription = supabaseClient
         .channel(`room:${roomId}`)
         .on('postgres_changes', 
@@ -170,6 +171,7 @@ async function startGame() {
     }
 }
 
+// YOUR GAME LOGIC STARTS HERE - Customize these functions
 function initializeGame() {
     console.log('Game initialized - Add your card game logic here');
     dealInitialCards();
@@ -212,6 +214,7 @@ function gameAction(action) {
     console.log('Action:', action);
     addLog(`You chose to ${action}`);
     broadcastAction(action);
+    // Add your turn logic here
 }
 
 async function broadcastAction(action) {
@@ -224,6 +227,46 @@ async function broadcastAction(action) {
         }]);
 }
 
+// HEARTBEAT - Updates last_seen every 5 seconds
+function startHeartbeat() {
+    setInterval(async () => {
+        await supabaseClient
+            .from('players')
+            .update({ last_seen: new Date().toISOString() })
+            .eq('id', playerId);
+    }, 5000);
+}
+
+// DISCONNECT CHECKER - Removes players not seen for 15 seconds
+function startDisconnectChecker() {
+    disconnectChecker = setInterval(async () => {
+        const { data: allPlayers, error } = await supabaseClient
+            .from('players')
+            .select('*')
+            .eq('room_id', roomId);
+        
+        if (error || !allPlayers) return;
+        
+        const now = new Date();
+        const timeout = 15000; // 15 seconds
+        
+        for (const player of allPlayers) {
+            const lastSeen = new Date(player.last_seen);
+            const timeDiff = now - lastSeen;
+            
+            // Remove if inactive for 15+ seconds (and not current player)
+            if (timeDiff > timeout && player.id !== playerId) {
+                await supabaseClient
+                    .from('players')
+                    .delete()
+                    .eq('id', player.id);
+                
+                addLog(`${player.name} disconnected (timeout)`);
+            }
+        }
+    }, 5000); // Check every 5 seconds
+}
+
 function copyCode() {
     const code = localStorage.getItem('currentRoom');
     navigator.clipboard.writeText(code);
@@ -231,15 +274,20 @@ function copyCode() {
 }
 
 async function leaveGame() {
+    // Stop intervals
+    if (disconnectChecker) clearInterval(disconnectChecker);
+    
     if (subscription) {
         await subscription.unsubscribe();
     }
     
+    // Remove player from room
     await supabaseClient
         .from('players')
         .delete()
         .eq('id', playerId);
     
+    // Clear session
     localStorage.removeItem('currentRoom');
     localStorage.removeItem('currentPlayer');
     localStorage.removeItem('isHost');
@@ -248,16 +296,10 @@ async function leaveGame() {
     window.location.href = 'index.html';
 }
 
-function startHeartbeat() {
-    setInterval(async () => {
-        await supabaseClient
-            .from('players')
-            .update({ is_connected: true })
-            .eq('id', playerId);
-    }, 30000);
-}
-
+// Cleanup on page close
 window.addEventListener('beforeunload', async () => {
+    if (disconnectChecker) clearInterval(disconnectChecker);
+    
     await supabaseClient
         .from('players')
         .delete()
