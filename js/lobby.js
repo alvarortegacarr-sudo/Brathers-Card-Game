@@ -80,6 +80,12 @@ async function joinRoom() {
             return;
         }
 
+        // Check if room is ended
+        if (room.status === 'ended') {
+            showError('This game has already ended');
+            return;
+        }
+
         if (room.status !== 'waiting') {
             showError('Game already in progress');
             return;
@@ -99,7 +105,6 @@ async function joinRoom() {
         // Check if player already in this room
         const existingPlayer = players.find(p => p.id === playerId);
         if (existingPlayer) {
-            // Just redirect to game
             localStorage.setItem('currentRoom', code);
             localStorage.setItem('currentPlayer', name);
             localStorage.setItem('isHost', room.host_id === playerId ? 'true' : 'false');

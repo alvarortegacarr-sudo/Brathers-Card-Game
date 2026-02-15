@@ -83,17 +83,31 @@
             </div>
         </div>
 
-        <!-- Chat/Log -->
-        <div class="side-panel">
-            <div class="player-list" id="playerList">
-                <h3>Players (0/5)</h3>
-                <ul id="playersUl"></ul>
-            </div>
-            <div class="game-log" id="gameLog">
-                <div class="log-entry">Welcome to the table!</div>
-            </div>
+<!-- Side Panel with Chat -->
+<div class="side-panel">
+    <div class="player-list" id="playerList">
+        <h3>Players (0/5)</h3>
+        <ul id="playersUl"></ul>
+    </div>
+    
+    <!-- Chat Section -->
+    <div class="chat-container">
+        <div class="chat-header">💬 Chat</div>
+        <div class="chat-messages" id="chatLog"></div>
+        <div class="chat-input-area">
+            <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
+            <button onclick="sendChatMessage()" class="btn-chat">Send</button>
         </div>
     </div>
+    
+    <!-- Game Log -->
+    <div class="game-log-panel">
+        <h3>Game Log</h3>
+        <div class="game-log" id="gameLog">
+            <div class="log-entry">Welcome to the table!</div>
+        </div>
+    </div>
+</div>
 
     <!-- Start Game Button (Host only) -->
     <div class="host-controls" id="hostControls" style="display: none;">

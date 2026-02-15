@@ -1,57 +1,160 @@
-// Get player ID (same as lobby)
+// ==========================================
+// CARD GAME - PRODUCTION READY
+// Safety features: auto-disconnect, host migration, game end detection
+// ==========================================
+
+// Get player ID
 let playerId = localStorage.getItem('playerId');
 if (!playerId) {
     playerId = crypto.randomUUID();
     localStorage.setItem('playerId', playerId);
 }
 
+// Global state
 let currentRoom = null;
 let currentPlayer = null;
 let roomId = null;
 let subscription = null;
 let players = [];
-let disconnectChecker = null;
+let gameLoop = null;
+let heartbeatInterval = null;
+let isGameActive = false;
 
-// Initialize on load
+// ==========================================
+// INITIALIZATION
+// ==========================================
+
 document.addEventListener('DOMContentLoaded', async () => {
     const roomCode = localStorage.getItem('currentRoom');
     currentPlayer = localStorage.getItem('currentPlayer');
-    const isHost = localStorage.getItem('isHost') === 'true';
     
     if (!roomCode) {
-        window.location.href = 'index.html';
+        redirectToLobby('No room code found');
         return;
     }
 
-    document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
-    
-    if (isHost) {
-        document.getElementById('hostControls').style.display = 'block';
-    }
-
-    await loadRoom(roomCode);
-    setupRealtimeSubscription();
-    startHeartbeat();
-    startDisconnectChecker(); // Start checking for disconnected players
-});
-
-async function loadRoom(code) {
+    // Check if room still exists and is valid
     const { data: room, error } = await supabaseClient
         .from('rooms')
         .select('*')
-        .eq('code', code)
+        .eq('code', roomCode)
         .single();
 
     if (error || !room) {
-        alert('Room not found');
-        leaveGame();
+        redirectToLobby('Room not found');
         return;
     }
 
+    if (room.status === 'ended') {
+        redirectToLobby(`Game ended: ${room.ended_reason || 'Unknown reason'}`);
+        return;
+    }
+
+    // Check if player is still in this room
+    const { data: playerCheck } = await supabaseClient
+        .from('players')
+        .select('*')
+        .eq('id', playerId)
+        .eq('room_id', room.id)
+        .single();
+
+    if (!playerCheck) {
+        redirectToLobby('You were removed from this room');
+        return;
+    }
+
+    // Initialize game
     currentRoom = room;
     roomId = room.id;
+    
+    setupUI();
     await updatePlayerList();
+    setupRealtimeSubscription();
+    startGameLoop();
+    
+    addLog('Connected to table');
+});
+
+function setupUI() {
+    const roomCode = localStorage.getItem('currentRoom');
+    const isHost = localStorage.getItem('isHost') === 'true';
+    
+    document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
+    
+    if (isHost && currentRoom?.status === 'waiting') {
+        document.getElementById('hostControls').style.display = 'block';
+    }
 }
+
+// ==========================================
+// REALTIME SYNC
+// ==========================================
+
+function setupRealtimeSubscription() {
+    subscription = supabaseClient
+        .channel(`room:${roomId}`)
+        .on('postgres_changes', 
+            { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
+            async (payload) => {
+                await updatePlayerList();
+                
+                if (payload.eventType === 'INSERT') {
+                    addLog(`${payload.new.name} joined the table`);
+                } else if (payload.eventType === 'DELETE') {
+                    const playerName = payload.old?.name || 'A player';
+                    addLog(`${playerName} left the table`);
+                    
+                    // Check if we need to end game
+                    await checkGameEndConditions();
+                }
+            }
+        )
+        .on('postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
+            async (payload) => {
+                currentRoom = payload.new;
+                
+                // Game started
+                if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
+                    document.getElementById('gameStatus').textContent = 'Game in progress';
+                    document.getElementById('hostControls').style.display = 'none';
+                    addLog('Game started!');
+                    isGameActive = true;
+                    initializeGame();
+                }
+                
+                // Game ended
+                if (payload.new.status === 'ended') {
+                    isGameActive = false;
+                    endGame(payload.new.ended_reason);
+                }
+                
+                // Host changed
+                if (payload.old.host_id !== payload.new.host_id) {
+                    const { data: newHost } = await supabaseClient
+                        .from('players')
+                        .select('name')
+                        .eq('id', payload.new.host_id)
+                        .single();
+                    
+                    addLog(`${newHost?.name || 'New host'} is now the host`);
+                    
+                    // Update UI if we became host
+                    if (payload.new.host_id === playerId) {
+                        localStorage.setItem('isHost', 'true');
+                        if (currentRoom.status === 'waiting') {
+                            document.getElementById('hostControls').style.display = 'block';
+                        }
+                    }
+                }
+            }
+        )
+        .subscribe();
+}
+
+// ==========================================
+// PLAYER MANAGEMENT
+// ==========================================
 
 async function updatePlayerList() {
     const { data: playersData, error } = await supabaseClient
@@ -64,11 +167,10 @@ async function updatePlayerList() {
 
     players = playersData;
     
-    // Update seats on table
+    // Update table seats
     document.querySelectorAll('.seat').forEach(seat => {
         const seatNum = parseInt(seat.id.split('-')[1]);
         const player = players.find(p => p.seat_number === seatNum);
-        
         const slot = seat.querySelector('.player-slot');
         
         if (player) {
@@ -76,10 +178,7 @@ async function updatePlayerList() {
             slot.classList.add('active');
             slot.querySelector('.avatar').textContent = player.name.charAt(0).toUpperCase();
             slot.querySelector('.name').textContent = player.name;
-            
-            if (player.id === playerId) {
-                slot.style.borderColor = '#48bb78';
-            }
+            slot.style.borderColor = player.id === playerId ? '#48bb78' : 'rgba(255,255,255,0.1)';
         } else {
             slot.classList.add('empty');
             slot.classList.remove('active');
@@ -89,19 +188,16 @@ async function updatePlayerList() {
         }
     });
 
-    // Update side panel list
+    // Update side panel
     const ul = document.getElementById('playersUl');
     ul.innerHTML = '';
     players.forEach(p => {
         const li = document.createElement('li');
         let badges = '';
-        if (p.id === currentRoom.host_id) badges += '<span class="host">👑 HOST</span>';
+        if (p.id === currentRoom?.host_id) badges += '<span class="host">👑 HOST</span>';
         if (p.id === playerId) badges += '<span class="you"> YOU</span>';
         
-        li.innerHTML = `
-            <span>${p.name} (Seat ${p.seat_number})</span>
-            <div>${badges}</div>
-        `;
+        li.innerHTML = `<span>${p.name} (Seat ${p.seat_number})</span><div>${badges}</div>`;
         ul.appendChild(li);
     });
 
@@ -109,51 +205,133 @@ async function updatePlayerList() {
     
     // Update status
     const status = document.getElementById('gameStatus');
-    if (players.length < 2) {
-        status.textContent = 'Waiting for more players...';
-        status.style.color = '#ecc94b';
-    } else {
-        status.textContent = 'Ready to start';
-        status.style.color = '#48bb78';
+    if (!isGameActive) {
+        if (players.length < 2) {
+            status.textContent = 'Waiting for more players...';
+            status.style.color = '#ecc94b';
+        } else {
+            status.textContent = 'Ready to start';
+            status.style.color = '#48bb78';
+        }
     }
 }
 
-function setupRealtimeSubscription() {
-    subscription = supabaseClient
-        .channel(`room:${roomId}`)
-        .on('postgres_changes', 
-            { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
-            (payload) => {
-                updatePlayerList();
-                if (payload.eventType === 'INSERT') {
-                    addLog(`${payload.new.name} joined the table`);
-                } else if (payload.eventType === 'DELETE') {
-                    addLog('A player left the table');
-                }
-            }
-        )
-        .on('postgres_changes',
-            { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
-            (payload) => {
-                if (payload.new.status === 'playing') {
-                    document.getElementById('gameStatus').textContent = 'Game in progress';
-                    document.getElementById('hostControls').style.display = 'none';
-                    addLog('Game started!');
-                    initializeGame();
-                }
-            }
-        )
-        .subscribe();
+// ==========================================
+// GAME LOOP & SAFETY CHECKS
+// ==========================================
+
+function startGameLoop() {
+    // Heartbeat every 3 seconds
+    heartbeatInterval = setInterval(async () => {
+        await supabaseClient
+            .from('players')
+            .update({ last_seen: new Date().toISOString() })
+            .eq('id', playerId);
+    }, 3000);
+    
+    // Cleanup check every 5 seconds
+    gameLoop = setInterval(async () => {
+        await cleanupDisconnectedPlayers();
+        await checkGameEndConditions();
+    }, 5000);
 }
 
-function addLog(message) {
-    const log = document.getElementById('gameLog');
-    const entry = document.createElement('div');
-    entry.className = 'log-entry';
-    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    log.appendChild(entry);
-    log.scrollTop = log.scrollHeight;
+async function cleanupDisconnectedPlayers() {
+    // Mark inactive players (not seen for 10 seconds)
+    const cutoffTime = new Date(Date.now() - 10000).toISOString();
+    
+    const { data: inactivePlayers } = await supabaseClient
+        .from('players')
+        .select('id, name')
+        .eq('room_id', roomId)
+        .lt('last_seen', cutoffTime);
+    
+    if (inactivePlayers) {
+        for (const player of inactivePlayers) {
+            await supabaseClient.from('players').delete().eq('id', player.id);
+            addLog(`${player.name} disconnected (timeout)`);
+        }
+    }
 }
+
+async function checkGameEndConditions() {
+    const { data: room } = await supabaseClient
+        .from('rooms')
+        .select('*, players(*)')
+        .eq('id', roomId)
+        .single();
+    
+    if (!room || room.status === 'ended') return;
+    
+    const activePlayers = room.players || [];
+    
+    // Condition 1: No players left
+    if (activePlayers.length === 0) {
+        await endGameServer('empty');
+        return;
+    }
+    
+    // Condition 2: Host left during game
+    const hostStillHere = activePlayers.some(p => p.id === room.host_id);
+    if (!hostStillHere && room.status === 'playing') {
+        await endGameServer('host_left');
+        return;
+    }
+    
+    // Condition 3: Only one player left during game
+    if (activePlayers.length === 1 && room.status === 'playing') {
+        await endGameServer('insufficient_players');
+        return;
+    }
+    
+    // Condition 4: Host left in lobby - transfer host
+    if (!hostStillHere && room.status === 'waiting' && activePlayers.length > 0) {
+        const newHost = activePlayers[0];
+        await supabaseClient
+            .from('rooms')
+            .update({ host_id: newHost.id })
+            .eq('id', roomId);
+        
+        if (newHost.id === playerId) {
+            localStorage.setItem('isHost', 'true');
+            document.getElementById('hostControls').style.display = 'block';
+        }
+    }
+}
+
+async function endGameServer(reason) {
+    await supabaseClient
+        .from('rooms')
+        .update({ 
+            status: 'ended', 
+            ended_at: new Date().toISOString(), 
+            ended_reason: reason 
+        })
+        .eq('id', roomId);
+}
+
+function endGame(reason) {
+    isGameActive = false;
+    
+    let message = 'Game ended';
+    switch(reason) {
+        case 'empty': message = 'Game ended: All players left'; break;
+        case 'host_left': message = 'Game ended: Host disconnected'; break;
+        case 'insufficient_players': message = 'Game ended: Not enough players'; break;
+        case 'manual': message = 'Game ended by host'; break;
+    }
+    
+    addLog(message);
+    alert(message);
+    
+    setTimeout(() => {
+        redirectToLobby();
+    }, 3000);
+}
+
+// ==========================================
+// GAME ACTIONS
+// ==========================================
 
 async function startGame() {
     if (players.length < 2) {
@@ -171,10 +349,10 @@ async function startGame() {
     }
 }
 
-// YOUR GAME LOGIC STARTS HERE - Customize these functions
 function initializeGame() {
-    console.log('Game initialized - Add your card game logic here');
+    console.log('Game started - Add your custom game logic here');
     dealInitialCards();
+    // Add your turn system, scoring, etc. here
 }
 
 function dealInitialCards() {
@@ -189,7 +367,6 @@ function dealInitialCards() {
     }
     
     deck = deck.sort(() => Math.random() - 0.5);
-    
     const myHand = deck.splice(0, 2);
     renderHand(myHand);
 }
@@ -211,6 +388,8 @@ function renderHand(cards) {
 }
 
 function gameAction(action) {
+    if (!isGameActive) return;
+    
     console.log('Action:', action);
     addLog(`You chose to ${action}`);
     broadcastAction(action);
@@ -227,44 +406,17 @@ async function broadcastAction(action) {
         }]);
 }
 
-// HEARTBEAT - Updates last_seen every 5 seconds
-function startHeartbeat() {
-    setInterval(async () => {
-        await supabaseClient
-            .from('players')
-            .update({ last_seen: new Date().toISOString() })
-            .eq('id', playerId);
-    }, 5000);
-}
+// ==========================================
+// UTILITIES
+// ==========================================
 
-// DISCONNECT CHECKER - Removes players not seen for 15 seconds
-function startDisconnectChecker() {
-    disconnectChecker = setInterval(async () => {
-        const { data: allPlayers, error } = await supabaseClient
-            .from('players')
-            .select('*')
-            .eq('room_id', roomId);
-        
-        if (error || !allPlayers) return;
-        
-        const now = new Date();
-        const timeout = 15000; // 15 seconds
-        
-        for (const player of allPlayers) {
-            const lastSeen = new Date(player.last_seen);
-            const timeDiff = now - lastSeen;
-            
-            // Remove if inactive for 15+ seconds (and not current player)
-            if (timeDiff > timeout && player.id !== playerId) {
-                await supabaseClient
-                    .from('players')
-                    .delete()
-                    .eq('id', player.id);
-                
-                addLog(`${player.name} disconnected (timeout)`);
-            }
-        }
-    }, 5000); // Check every 5 seconds
+function addLog(message) {
+    const log = document.getElementById('gameLog');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
 }
 
 function copyCode() {
@@ -273,21 +425,9 @@ function copyCode() {
     alert('Room code copied!');
 }
 
-async function leaveGame() {
-    // Stop intervals
-    if (disconnectChecker) clearInterval(disconnectChecker);
+function redirectToLobby(message) {
+    if (message) alert(message);
     
-    if (subscription) {
-        await subscription.unsubscribe();
-    }
-    
-    // Remove player from room
-    await supabaseClient
-        .from('players')
-        .delete()
-        .eq('id', playerId);
-    
-    // Clear session
     localStorage.removeItem('currentRoom');
     localStorage.removeItem('currentPlayer');
     localStorage.removeItem('isHost');
@@ -296,12 +436,37 @@ async function leaveGame() {
     window.location.href = 'index.html';
 }
 
-// Cleanup on page close
-window.addEventListener('beforeunload', async () => {
-    if (disconnectChecker) clearInterval(disconnectChecker);
+// ==========================================
+// CLEANUP
+// ==========================================
+
+async function leaveGame() {
+    // Stop all intervals
+    if (gameLoop) clearInterval(gameLoop);
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
     
-    await supabaseClient
-        .from('players')
-        .delete()
-        .eq('id', playerId);
+    // Unsubscribe from realtime
+    if (subscription) {
+        await subscription.unsubscribe();
+    }
+    
+    // If host leaves during game, end it
+    if (currentRoom?.host_id === playerId && isGameActive) {
+        await endGameServer('host_left');
+    }
+    
+    // Remove player
+    await supabaseClient.from('players').delete().eq('id', playerId);
+    
+    // Cleanup local storage and redirect
+    redirectToLobby();
+}
+
+// Emergency cleanup on page close
+window.addEventListener('beforeunload', async (e) => {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (gameLoop) clearInterval(gameLoop);
+    
+    // Try to clean up (may not complete before page closes)
+    await supabaseClient.from('players').delete().eq('id', playerId);
 });
