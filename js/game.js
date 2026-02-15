@@ -1,5 +1,6 @@
 // ==========================================
-// CARD GAME - PRODUCTION READY WITH CHAT
+// CUSTOM CARD GAME - 40 CARDS, 5 ATTRIBUTES
+// CAR | CUL | TET | FIS | PER
 // ==========================================
 
 // Get player ID
@@ -16,9 +17,20 @@ let roomId = null;
 let subscription = null;
 let chatSubscription = null;
 let players = [];
+let myHand = [];
 let gameLoop = null;
 let heartbeatInterval = null;
 let isGameActive = false;
+let currentTurn = null;
+let gameDeck = [];
+
+// Card distribution based on player count
+const CARD_DISTRIBUTION = {
+    2: 20,
+    3: 13,
+    4: 10,
+    5: 8
+};
 
 // ==========================================
 // INITIALIZATION
@@ -65,15 +77,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     roomId = room.id;
     
     setupUI();
-    setupChatInput(); // Setup chat input here
+    setupChatInput();
     await updatePlayerList();
     setupRealtimeSubscription();
     setupChatSubscription();
     loadChatHistory();
     startGameLoop();
     
+    // If game is already playing, load my hand
+    if (room.status === 'playing') {
+        isGameActive = true;
+        await loadMyHand();
+        updateGameUI();
+    }
+    
     addLog('Connected to table');
-    addChatMessage('System', 'Welcome to the table! Use the chat below to communicate.');
+    addChatMessage('System', 'Welcome! CAR | CUL | TET | FIS | PER - May the best cards win!');
 });
 
 function setupUI() {
@@ -87,7 +106,6 @@ function setupUI() {
     }
 }
 
-// Setup chat input listeners
 function setupChatInput() {
     const chatInput = document.getElementById('chatInput');
     const sendButton = document.querySelector('.btn-chat');
@@ -100,6 +118,89 @@ function setupChatInput() {
     
     if (sendButton) {
         sendButton.addEventListener('click', sendChatMessage);
+    }
+}
+
+// ==========================================
+// GAME LOGIC - DEALING CARDS
+// ==========================================
+
+async function startGame() {
+    if (players.length < 2) {
+        alert('Need at least 2 players to start');
+        return;
+    }
+
+    // Deal cards first
+    await dealCards();
+    
+    // Then update room status
+    const { error } = await supabaseClient
+        .from('rooms')
+        .update({ 
+            status: 'playing',
+            game_data: { 
+                current_turn: players[0].id,
+                round: 1,
+                started_at: new Date().toISOString()
+            }
+        })
+        .eq('id', roomId);
+
+    if (error) {
+        alert('Failed to start game');
+    }
+}
+
+async function dealCards() {
+    // Get all 40 cards
+    const { data: allCards } = await supabaseClient
+        .from('cards')
+        .select('*');
+    
+    if (!allCards || allCards.length !== 40) {
+        alert('Error: Card deck not found');
+        return;
+    }
+
+    // Shuffle deck
+    const shuffled = [...allCards].sort(() => Math.random() - 0.5);
+    
+    // Determine cards per player
+    const cardsPerPlayer = CARD_DISTRIBUTION[players.length] || 8;
+    
+    // Deal cards to each player
+    let cardIndex = 0;
+    for (const player of players) {
+        const playerCards = shuffled.slice(cardIndex, cardIndex + cardsPerPlayer);
+        cardIndex += cardsPerPlayer;
+        
+        // Insert into player_hands
+        for (const card of playerCards) {
+            await supabaseClient
+                .from('player_hands')
+                .insert({
+                    room_id: roomId,
+                    player_id: player.id,
+                    card_id: card.id
+                });
+        }
+    }
+    
+    addChatMessage('System', `🎮 Game started! Each player gets ${cardsPerPlayer} cards.`);
+}
+
+async function loadMyHand() {
+    const { data: hand } = await supabaseClient
+        .from('player_hands')
+        .select('*, cards(*)')
+        .eq('room_id', roomId)
+        .eq('player_id', playerId)
+        .eq('played', false);
+    
+    if (hand) {
+        myHand = hand.map(h => h.cards);
+        renderHand(myHand);
     }
 }
 
@@ -146,26 +247,17 @@ async function sendChatMessage() {
     const message = input.value.trim();
     if (!message) return;
     
-    // Clear input immediately for better UX
     input.value = '';
-    
-    // Add to UI immediately
     addChatMessage('You', message, true);
     
-    // Send to database
-    const { error } = await supabaseClient
+    await supabaseClient
         .from('chat_messages')
-        .insert([{
+        .insert({
             room_id: roomId,
             player_id: playerId,
             player_name: currentPlayer,
             message: message
-        }]);
-    
-    if (error) {
-        console.error('Failed to send message:', error);
-        addChatMessage('System', 'Failed to send message', false);
-    }
+        });
 }
 
 function addChatMessage(sender, message, isOwn = false) {
@@ -227,10 +319,11 @@ function setupRealtimeSubscription() {
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     document.getElementById('gameStatus').textContent = 'Game in progress';
                     document.getElementById('hostControls').style.display = 'none';
-                    addLog('Game started!');
-                    addChatMessage('System', '🎮 Game started! Good luck!');
                     isGameActive = true;
-                    initializeGame();
+                    currentTurn = payload.new.game_data?.current_turn;
+                    await loadMyHand();
+                    updateGameUI();
+                    addChatMessage('System', '🎮 Game started! Select an attribute to challenge!');
                 }
                 
                 if (payload.new.status === 'ended') {
@@ -254,6 +347,15 @@ function setupRealtimeSubscription() {
                             document.getElementById('hostControls').style.display = 'block';
                         }
                     }
+                }
+            }
+        )
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'player_hands', filter: `room_id=eq.${roomId}` },
+            async (payload) => {
+                // Refresh hand if cards change
+                if (isGameActive) {
+                    await loadMyHand();
                 }
             }
         )
@@ -285,13 +387,22 @@ async function updatePlayerList() {
             slot.classList.add('active');
             slot.querySelector('.avatar').textContent = player.name.charAt(0).toUpperCase();
             slot.querySelector('.name').textContent = player.name;
-            slot.style.borderColor = player.id === playerId ? '#48bb78' : 'rgba(255,255,255,0.1)';
+            
+            // Highlight current turn
+            if (isGameActive && currentTurn === player.id) {
+                slot.style.borderColor = '#ffd700';
+                slot.style.boxShadow = '0 0 20px rgba(255, 215, 0, 0.5)';
+            } else {
+                slot.style.borderColor = player.id === playerId ? '#48bb78' : 'rgba(255,255,255,0.1)';
+                slot.style.boxShadow = 'none';
+            }
         } else {
             slot.classList.add('empty');
             slot.classList.remove('active');
             slot.querySelector('.avatar').textContent = '?';
             slot.querySelector('.name').textContent = 'Empty';
             slot.style.borderColor = 'rgba(255,255,255,0.1)';
+            slot.style.boxShadow = 'none';
         }
     });
 
@@ -303,6 +414,7 @@ async function updatePlayerList() {
             let badges = '';
             if (p.id === currentRoom?.host_id) badges += '<span class="host">👑 HOST</span>';
             if (p.id === playerId) badges += '<span class="you"> YOU</span>';
+            if (isGameActive && currentTurn === p.id) badges += '<span class="turn">🎯 TURN</span>';
             
             li.innerHTML = `<span>${p.name} (Seat ${p.seat_number})</span><div>${badges}</div>`;
             ul.appendChild(li);
@@ -327,7 +439,122 @@ async function updatePlayerList() {
 }
 
 // ==========================================
-// GAME LOOP & SAFETY CHECKS
+// CARD RENDERING
+// ==========================================
+
+function renderHand(cards) {
+    const container = document.querySelector('.hand-container');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    cards.forEach((card, index) => {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'game-card';
+        cardEl.innerHTML = `
+            <div class="card-header">${escapeHtml(card.name)}</div>
+            <div class="card-stats">
+                <div class="stat" onclick="playCard(${card.id}, 'car')">
+                    <span class="stat-label">CAR</span>
+                    <span class="stat-value">${card.car}</span>
+                </div>
+                <div class="stat" onclick="playCard(${card.id}, 'cul')">
+                    <span class="stat-label">CUL</span>
+                    <span class="stat-value">${card.cul}</span>
+                </div>
+                <div class="stat" onclick="playCard(${card.id}, 'tet')">
+                    <span class="stat-label">TET</span>
+                    <span class="stat-value">${card.tet}</span>
+                </div>
+                <div class="stat" onclick="playCard(${card.id}, 'fis')">
+                    <span class="stat-label">FIS</span>
+                    <span class="stat-value">${card.fis}</span>
+                </div>
+                <div class="stat" onclick="playCard(${card.id}, 'per')">
+                    <span class="stat-label">PER</span>
+                    <span class="stat-value">${card.per}</span>
+                </div>
+            </div>
+        `;
+        container.appendChild(cardEl);
+    });
+}
+
+function updateGameUI() {
+    const status = document.getElementById('gameStatus');
+    if (status) {
+        if (currentTurn === playerId) {
+            status.textContent = 'Your turn! Select a card and attribute';
+            status.style.color = '#48bb78';
+        } else {
+            const currentPlayerName = players.find(p => p.id === currentTurn)?.name || 'Another player';
+            status.textContent = `Waiting for ${currentPlayerName}...`;
+            status.style.color = '#ecc94b';
+        }
+    }
+}
+
+// ==========================================
+// GAMEPLAY
+// ==========================================
+
+async function playCard(cardId, attribute) {
+    if (!isGameActive) return;
+    if (currentTurn !== playerId) {
+        alert('Not your turn!');
+        return;
+    }
+    
+    const card = myHand.find(c => c.id === cardId);
+    if (!card) return;
+    
+    const value = card[attribute];
+    
+    addChatMessage('System', `You played ${card.name} with ${attribute.toUpperCase()}: ${value}`);
+    
+    // Mark card as played
+    await supabaseClient
+        .from('player_hands')
+        .update({ played: true })
+        .eq('room_id', roomId)
+        .eq('player_id', playerId)
+        .eq('card_id', cardId);
+    
+    // Remove from local hand
+    myHand = myHand.filter(c => c.id !== cardId);
+    renderHand(myHand);
+    
+    // Here you would implement:
+    // 1. Compare with other players' cards
+    // 2. Determine winner of round
+    // 3. Award point or card
+    // 4. Check win condition
+    // 5. Pass turn to next player
+    
+    // For now, just pass turn
+    const currentIndex = players.findIndex(p => p.id === currentTurn);
+    const nextIndex = (currentIndex + 1) % players.length;
+    const nextPlayer = players[nextIndex];
+    
+    await supabaseClient
+        .from('rooms')
+        .update({
+            game_data: {
+                ...currentRoom.game_data,
+                current_turn: nextPlayer.id,
+                last_play: {
+                    player: playerId,
+                    card: card.name,
+                    attribute: attribute,
+                    value: value
+                }
+            }
+        })
+        .eq('id', roomId);
+}
+
+// ==========================================
+// SAFETY & CLEANUP
 // ==========================================
 
 function startGameLoop() {
@@ -431,83 +658,6 @@ function endGame(reason) {
     setTimeout(() => {
         redirectToLobby();
     }, 3000);
-}
-
-// ==========================================
-// GAME ACTIONS
-// ==========================================
-
-async function startGame() {
-    if (players.length < 2) {
-        alert('Need at least 2 players to start');
-        return;
-    }
-
-    const { error } = await supabaseClient
-        .from('rooms')
-        .update({ status: 'playing' })
-        .eq('id', roomId);
-
-    if (error) {
-        alert('Failed to start game');
-    }
-}
-
-function initializeGame() {
-    console.log('Game started - Add your custom game logic here');
-    dealInitialCards();
-}
-
-function dealInitialCards() {
-    const suits = ['♠', '♥', '♦', '♣'];
-    const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-    
-    let deck = [];
-    for (let suit of suits) {
-        for (let value of values) {
-            deck.push({ suit, value, color: (suit === '♥' || suit === '♦') ? 'red' : 'black' });
-        }
-    }
-    
-    deck = deck.sort(() => Math.random() - 0.5);
-    const myHand = deck.splice(0, 2);
-    renderHand(myHand);
-}
-
-function renderHand(cards) {
-    const container = document.querySelector('.hand-container');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    cards.forEach((card, index) => {
-        const cardEl = document.createElement('div');
-        cardEl.className = 'card card-dealt';
-        cardEl.style.animationDelay = `${index * 0.1}s`;
-        cardEl.innerHTML = `
-            <div style="color: ${card.color}; font-size: 2rem;">${card.suit}</div>
-            <div style="color: ${card.color}; font-size: 1.2rem; font-weight: bold;">${card.value}</div>
-        `;
-        container.appendChild(cardEl);
-    });
-}
-
-function gameAction(action) {
-    if (!isGameActive) return;
-    
-    console.log('Action:', action);
-    addLog(`You chose to ${action}`);
-    broadcastAction(action);
-}
-
-async function broadcastAction(action) {
-    await supabaseClient
-        .from('game_state')
-        .insert([{
-            room_id: roomId,
-            player_id: playerId,
-            data: { action, timestamp: new Date().toISOString() }
-        }]);
 }
 
 // ==========================================
