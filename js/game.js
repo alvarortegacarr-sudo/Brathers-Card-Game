@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadRoom(code) {
-    const { data: room, error } = await supabase
+    const { data: room, error } = await supabaseClient
         .from('rooms')
         .select('*')
         .eq('code', code)
@@ -45,7 +45,7 @@ async function loadRoom(code) {
 }
 
 async function updatePlayerList() {
-    const { data: playersData, error } = await supabase
+    const { data: playersData, error } = await supabaseClient
         .from('players')
         .select('*')
         .eq('room_id', roomId)
@@ -111,7 +111,7 @@ async function updatePlayerList() {
 
 function setupRealtimeSubscription() {
     // Subscribe to players changes
-    subscription = supabase
+    subscription = supabaseClient
         .channel(`room:${roomId}`)
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${roomId}` },
@@ -131,7 +131,6 @@ function setupRealtimeSubscription() {
                     document.getElementById('gameStatus').textContent = 'Game in progress';
                     document.getElementById('hostControls').style.display = 'none';
                     addLog('Game started!');
-                    // Initialize your card game logic here
                     initializeGame();
                 }
             }
@@ -154,7 +153,7 @@ async function startGame() {
         return;
     }
 
-    const { error } = await supabase
+    const { error } = await supabaseClient
         .from('rooms')
         .update({ status: 'playing' })
         .eq('id', roomId);
@@ -164,27 +163,15 @@ async function startGame() {
     }
 }
 
-// Placeholder for your game logic
 function initializeGame() {
-    // This is where you'll implement:
-    // - Deck creation and shuffling
-    // - Card dealing
-    // - Turn management
-    // - Win conditions
-    // etc.
-    
     console.log('Game initialized - Add your card game logic here');
-    
-    // Example: Deal cards to all players
     dealInitialCards();
 }
 
 function dealInitialCards() {
-    // Example implementation - replace with your game rules
     const suits = ['♠', '♥', '♦', '♣'];
     const values = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
     
-    // Create deck
     let deck = [];
     for (let suit of suits) {
         for (let value of values) {
@@ -192,13 +179,9 @@ function dealInitialCards() {
         }
     }
     
-    // Shuffle
     deck = deck.sort(() => Math.random() - 0.5);
     
-    // Deal to current player (example: 2 cards)
-    const mySeat = parseInt(localStorage.getItem('seatNumber'));
     const myHand = deck.splice(0, 2);
-    
     renderHand(myHand);
 }
 
@@ -219,16 +202,13 @@ function renderHand(cards) {
 }
 
 function gameAction(action) {
-    // Handle player actions (check, call, raise, fold, etc.)
     console.log('Action:', action);
     addLog(`You chose to ${action}`);
-    
-    // Broadcast to other players via Supabase
     broadcastAction(action);
 }
 
 async function broadcastAction(action) {
-    const { error } = await supabase
+    await supabaseClient
         .from('game_state')
         .insert([{
             room_id: roomId,
@@ -248,13 +228,11 @@ async function leaveGame() {
         await subscription.unsubscribe();
     }
     
-    // Remove player from room
-    await supabase
+    await supabaseClient
         .from('players')
         .delete()
         .eq('id', playerId);
     
-    // Clear session
     localStorage.removeItem('currentRoom');
     localStorage.removeItem('currentPlayer');
     localStorage.removeItem('isHost');
@@ -263,19 +241,17 @@ async function leaveGame() {
     window.location.href = 'index.html';
 }
 
-// Keep connection alive
 function startHeartbeat() {
     setInterval(async () => {
-        await supabase
+        await supabaseClient
             .from('players')
             .update({ is_connected: true })
             .eq('id', playerId);
     }, 30000);
 }
 
-// Handle page unload
 window.addEventListener('beforeunload', async () => {
-    await supabase
+    await supabaseClient
         .from('players')
         .delete()
         .eq('id', playerId);

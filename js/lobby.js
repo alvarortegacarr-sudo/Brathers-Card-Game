@@ -35,7 +35,7 @@ async function createRoom() {
         // Join as first player (seat 1, host)
         const { error: playerError } = await supabaseClient
             .from('players')
-            .insert([{
+            .upsert([{
                 room_id: room.id,
                 name: name,
                 seat_number: 1,
