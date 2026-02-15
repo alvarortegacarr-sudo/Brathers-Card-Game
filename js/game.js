@@ -1,5 +1,5 @@
 // ==========================================
-// EL TRIUNFO CARD GAME - FIXED VERSION
+// EL TRIUNFO CARD GAME - FIXED HOST VERSION
 // ==========================================
 
 let playerId = localStorage.getItem('playerId');
@@ -88,19 +88,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function setupUI() {
     const roomCode = localStorage.getItem('currentRoom');
-    const isHost = localStorage.getItem('isHost') === 'true';
     
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
     
-    // Setup host controls
+    // Only show host controls if I'm the host AND game hasn't started
+    updateHostControls();
+}
+
+function updateHostControls() {
     const hostControls = document.getElementById('hostControls');
-    if (hostControls) {
-        if (isHost && currentRoom?.status === 'waiting') {
-            hostControls.style.display = 'block';
-            hostControls.innerHTML = `<button onclick="startNewSet()" class="btn-start">🚀 Start New Set</button>`;
-        } else {
-            hostControls.style.display = 'none';
-        }
+    if (!hostControls) return;
+    
+    const isHost = localStorage.getItem('isHost') === 'true';
+    const gameNotStarted = !isGameActive && currentRoom?.status === 'waiting';
+    
+    if (isHost && gameNotStarted) {
+        hostControls.style.display = 'block';
+        hostControls.innerHTML = `
+            <button onclick="startNewSet()" class="btn-start">
+                🚀 Start Game (${players.length} player${players.length !== 1 ? 's' : ''})
+            </button>
+        `;
+    } else {
+        hostControls.style.display = 'none';
     }
 }
 
@@ -124,7 +134,7 @@ function setupChatInput() {
 
 async function startNewSet() {
     if (players.length < 2) {
-        alert('Need at least 2 players!');
+        alert('Need at least 2 players to start!');
         return;
     }
 
@@ -402,7 +412,7 @@ async function playCard(cardId) {
     const expectedPlayer = turnOrder[expectedPlayerIndex % players.length];
     
     if (expectedPlayer.player_id !== playerId) {
-        alert(`Wait for ${expectedPlayer.players?.name || 'another player'} to play!`);
+        alert(`Wait for your turn!`);
         return;
     }
     
@@ -555,7 +565,7 @@ async function endSet() {
         addChatMessage('System', `🎉 ${winner.name} WINS THE GAME with ${winner.total} points!`);
         setTimeout(() => endGame('completed'), 5000);
     } else {
-        // Prepare for next set
+        // Prepare for next set - ONLY original host can start next set
         const isHost = localStorage.getItem('isHost') === 'true';
         const hostControls = document.getElementById('hostControls');
         if (isHost && hostControls) {
@@ -692,7 +702,7 @@ function renderHand(cards) {
             const isTriunfo = triunfoCard && card.id === triunfoCard.id;
             const cardEl = document.createElement('div');
             cardEl.className = `game-card ${isTriunfo ? 'triunfo-card' : ''}`;
-            cardEl.style.cssText = 'width: 140px; cursor: pointer; transition: transform 0.2s;';
+            cardEl.style.cssText = 'width: 140px; cursor: pointer; transition: transform 0.2s; user-select: none;';
             cardEl.ondblclick = () => handleCardDoubleClick(card.id);
             
             // Highlight on hover
@@ -765,11 +775,6 @@ function checkIfMyTurnToSelect() {
     if (!currentRoom || !currentRoom.current_turn) return false;
     
     const currentTurnIdx = (currentRoom.current_turn - 1) % players.length;
-    
-    // We need to get turn order, but since it's async, we'll use a cached value
-    // For now, assume we can select if it's turn 1 and we're first, or based on last winner
-    // This is simplified - in full version, track last winner
-    
     return currentTurnIdx === 0; // Simplified: first player selects first turn
 }
 
@@ -943,6 +948,10 @@ function setupRealtimeSubscription() {
                 if (payload.eventType === 'UPDATE') {
                     const idx = players.findIndex(p => p.id === payload.new.id);
                     if (idx >= 0) players[idx] = payload.new;
+                } else if (payload.eventType === 'INSERT') {
+                    players.push(payload.new);
+                } else if (payload.eventType === 'DELETE') {
+                    players = players.filter(p => p.id !== payload.old.id);
                 }
                 
                 await updatePlayerList();
@@ -955,22 +964,17 @@ function setupRealtimeSubscription() {
                     addLog(`${playerName} left`);
                     addChatMessage('System', `${playerName} left the table`);
                 }
+                
+                // Update host controls when players join/leave
+                updateHostControls();
             }
         )
         .on('postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
             async (payload) => {
-                const oldRoom = currentRoom;
                 currentRoom = payload.new;
                 currentPhase = payload.new.phase;
                 currentAttribute = payload.new.current_attribute;
-                
-                // Only show host message if host actually changed to someone else
-                if (oldRoom.host_id !== payload.new.host_id && 
-                    oldRoom.host_id !== playerId && 
-                    payload.new.host_id !== playerId) {
-                    // Host changed to another player, not me
-                }
                 
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     isGameActive = true;
@@ -1004,6 +1008,7 @@ function setupRealtimeSubscription() {
 }
 
 async function updatePlayerList() {
+    // Refresh players from database
     const { data: playersData, error } = await supabaseClient
         .from('players')
         .select('*')
