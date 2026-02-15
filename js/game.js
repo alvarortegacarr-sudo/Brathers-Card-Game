@@ -88,11 +88,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function setupUI() {
     const roomCode = localStorage.getItem('currentRoom');
-    
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
     
-    // Only show host controls if I'm the host AND game hasn't started
-    updateHostControls();
+    // Show host controls immediately if I'm host (don't wait for currentRoom)
+    const isHost = localStorage.getItem('isHost') === 'true';
+    const hostControls = document.getElementById('hostControls');
+    
+    if (hostControls && isHost) {
+        hostControls.style.display = 'block';
+        hostControls.innerHTML = `
+            <button onclick="startNewSet()" class="btn-start">
+                🚀 Start Game (1 player)
+            </button>
+        `;
+    }
 }
 
 function updateHostControls() {
@@ -100,17 +109,44 @@ function updateHostControls() {
     if (!hostControls) return;
     
     const isHost = localStorage.getItem('isHost') === 'true';
-    const gameNotStarted = !isGameActive && currentRoom?.status === 'waiting';
     
-    if (isHost && gameNotStarted) {
+    // Only hide if game started, otherwise show with updated count
+    if (isGameActive || (currentRoom && currentRoom.status === 'playing')) {
+        hostControls.style.display = 'none';
+        return;
+    }
+    
+    if (isHost) {
         hostControls.style.display = 'block';
+        const count = players.length || 1;
         hostControls.innerHTML = `
             <button onclick="startNewSet()" class="btn-start">
-                🚀 Start Game (${players.length} player${players.length !== 1 ? 's' : ''})
+                🚀 Start Game (${count} player${count !== 1 ? 's' : ''})
             </button>
         `;
-    } else {
+    }
+}
+
+function updateHostControls() {
+    const hostControls = document.getElementById('hostControls');
+    if (!hostControls) return;
+    
+    const isHost = localStorage.getItem('isHost') === 'true';
+    
+    // Only hide if game started, otherwise show with updated count
+    if (isGameActive || (currentRoom && currentRoom.status === 'playing')) {
         hostControls.style.display = 'none';
+        return;
+    }
+    
+    if (isHost) {
+        hostControls.style.display = 'block';
+        const count = players.length || 1;
+        hostControls.innerHTML = `
+            <button onclick="startNewSet()" class="btn-start">
+                🚀 Start Game (${count} player${count !== 1 ? 's' : ''})
+            </button>
+        `;
     }
 }
 
