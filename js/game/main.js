@@ -165,16 +165,20 @@ export async function startNewSet() {
         await dealCards(allCards, shuffledPlayers);
         
         console.log('Updating room to playing...');
-        // Using game_data instead of current_round_starter column
-        await db.updateRoom({
-            status: 'playing',
-            phase: 'triunfo',
-            current_set: (state.currentRoom.current_set || 0) + 1,
-            current_turn: 0,
-            triunfo_card_id: randomCard.id,
-            current_attribute: null,
-            game_data: { round_starter: 0 }
-        });
+        const { error: updateError } = await supabaseClient
+            .from('rooms')
+            .update({
+                status: 'playing',
+                phase: 'triunfo',
+                current_set: (state.currentRoom.current_set || 0) + 1,
+                current_turn: 0,
+                triunfo_card_id: randomCard.id,
+                current_attribute: null,
+                game_data: { round_starter: 0 }
+            })
+            .eq('id', state.roomId);
+        
+        if (updateError) throw updateError;
         
         state.isGameActive = true;
         state.currentPhase = 'triunfo';
@@ -319,12 +323,16 @@ function setupRealtimeSubscription() {
                     if (hostControls) hostControls.style.display = 'none';
                 }
                 
+                // IMPORTANT: Load hand when transitioning to bidding phase
                 if (payload.new.phase === 'bidding' && payload.old.phase === 'triunfo') {
+                    console.log('Transitioning to bidding - loading hand');
                     state.currentPhase = 'bidding';
-                    await loadMyHand();
+                    await loadMyHand(); // This loads cards for all players
                 }
                 
+                // IMPORTANT: Load game state when transitioning to playing
                 if (payload.new.phase === 'playing' && payload.old.phase === 'bidding') {
+                    console.log('Transitioning to playing - loading game state');
                     state.currentPhase = 'playing';
                     await loadGameState();
                 }

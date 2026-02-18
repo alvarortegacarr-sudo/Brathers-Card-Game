@@ -6,6 +6,7 @@ import { state } from './state.js';
 import * as db from './supabase.js';
 import * as ui from './ui.js';
 import { addChatMessage } from './main.js';
+import { supabaseClient } from './supabase.js';
 
 export async function submitBid(bid) {
     console.log('=== SUBMIT BID ===', bid, 'Phase:', state.currentPhase);
@@ -33,7 +34,7 @@ export async function submitBid(bid) {
         
         addChatMessage('System', `You bid ${bid} rounds!`);
         
-        // Check if all players have bid
+        // Check if all players have bid after a short delay
         setTimeout(() => checkAllPlayersBid(), 500);
         
     } catch (err) {
@@ -48,15 +49,30 @@ async function checkAllPlayersBid() {
     console.log('Checking if all players have bid...');
     
     try {
-        const players = await db.fetchPlayers();
+        // Fetch fresh player data directly from database
+        const { data: players, error } = await supabaseClient
+            .from('players')
+            .select('*')
+            .eq('room_id', state.roomId);
+        
+        if (error) {
+            console.error('Fetch error:', error);
+            setTimeout(checkAllPlayersBid, 1000);
+            return;
+        }
+        
         const totalPlayers = players.length;
         const biddedCount = players.filter(p => p.has_bid).length;
         
         console.log(`Bidding progress: ${biddedCount}/${totalPlayers}`);
+        console.log('Players status:', players.map(p => `${p.name}: ${p.has_bid ? 'bid' : 'waiting'}`));
         
         if (biddedCount >= totalPlayers) {
             console.log('ALL PLAYERS BID! Starting game...');
             await transitionToPlayingPhase();
+        } else {
+            // Check again in 1 second
+            setTimeout(checkAllPlayersBid, 1000);
         }
     } catch (err) {
         console.error('Check all bid error:', err);
@@ -66,16 +82,28 @@ async function checkAllPlayersBid() {
 
 async function transitionToPlayingPhase() {
     try {
-        await db.updateRoom({
-            phase: 'playing',
-            current_turn: 1,
-            current_attribute: null,
-            current_round_starter: 0
-        });
+        console.log('Transitioning to playing phase...');
+        const { error } = await supabaseClient
+            .from('rooms')
+            .update({
+                phase: 'playing',
+                current_turn: 1,
+                current_attribute: null,
+                game_data: { round_starter: 0 }
+            })
+            .eq('id', state.roomId);
         
+        if (error) {
+            console.error('Transition error:', error);
+            throw error;
+        }
+        
+        console.log('Successfully transitioned to playing phase');
         addChatMessage('System', `🎮 Round 1 begins! First player selects attribute and plays card.`);
     } catch (err) {
         console.error('Transition error:', err);
+        // Retry after delay
+        setTimeout(transitionToPlayingPhase, 2000);
     }
 }
 
