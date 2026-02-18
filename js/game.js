@@ -2,8 +2,7 @@
 // EL TRIUNFO - COMPLETE SINGLE FILE VERSION
 // ==========================================
 
-// Supabase client from global
-const supabaseClient = window.supabaseClient;
+// Use global supabaseClient from window.supabase.js - DO NOT redeclare
 
 // State
 const state = {
@@ -44,19 +43,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
     
-    // Setup start button
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.addEventListener('click', startGame);
     }
 
-    // Setup chat
     document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendChatMessage();
     });
 
     try {
-        // Fetch room
         const { data: room, error } = await supabaseClient
             .from('rooms')
             .select('*, players(*), turn_order(*)')
@@ -80,10 +76,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         updatePlayerList(room.players);
         updateHostControls();
 
-        // Setup realtime
         setupRealtime();
 
-        // Load game if active
         if (room.status === 'playing') {
             await loadMyHand();
             await loadMyPosition();
@@ -114,12 +108,10 @@ async function startGame() {
     document.getElementById('hostControls').style.display = 'none';
 
     try {
-        // Cleanup
         await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         await supabaseClient.from('turn_order').delete().eq('room_id', state.roomId);
 
-        // Reset players
         for (const p of state.players) {
             await supabaseClient
                 .from('players')
@@ -127,7 +119,6 @@ async function startGame() {
                 .eq('id', p.id);
         }
 
-        // Create turn order
         const shuffled = [...state.players].sort(() => Math.random() - 0.5);
         for (let i = 0; i < shuffled.length; i++) {
             await supabaseClient
@@ -135,18 +126,13 @@ async function startGame() {
                 .insert({ room_id: state.roomId, player_id: shuffled[i].id, position: i });
         }
 
-        // Get cards
         const { data: allCards } = await supabaseClient.from('cards').select('*');
-        
-        // Pick triunfo
         const triunfo = allCards[Math.floor(Math.random() * allCards.length)];
         
-        // Deal cards - FIXED: Deal to ALL players
         const shuffledCards = [...allCards].sort(() => Math.random() - 0.5);
         updateCardsPerPlayer();
         
-        console.log('Dealing', state.cardsPerPlayer, 'cards to each of', state.players.length, 'players');
-        console.log('Total cards needed:', state.cardsPerPlayer * state.players.length);
+        console.log('Dealing', state.cardsPerPlayer, 'cards to', state.players.length, 'players');
         
         let cardIdx = 0;
         for (const player of state.players) {
@@ -156,7 +142,7 @@ async function startGame() {
             console.log('Dealing to', player.name, ':', playerCards.length, 'cards');
             
             for (const card of playerCards) {
-                const { error: insertError } = await supabaseClient
+                await supabaseClient
                     .from('player_hands')
                     .insert({
                         room_id: state.roomId,
@@ -164,14 +150,9 @@ async function startGame() {
                         card_id: card.id,
                         played: false
                     });
-                
-                if (insertError) {
-                    console.error('Failed to deal card:', insertError);
-                }
             }
         }
 
-        // Update room to triunfo phase
         await supabaseClient
             .from('rooms')
             .update({
@@ -185,7 +166,6 @@ async function startGame() {
 
         addChatMessage('System', `🎴 Game started! El Triunfo is ${triunfo.name}`);
 
-        // Go to bidding after 2 seconds
         setTimeout(async () => {
             await supabaseClient
                 .from('rooms')
@@ -220,7 +200,6 @@ async function submitBid(bid) {
 
         addChatMessage('System', `You bid ${bid}`);
 
-        // Check if all bid
         checkAllBidded();
 
     } catch (err) {
@@ -258,7 +237,6 @@ async function selectAttribute(attr) {
     
     if (state.currentPhase !== 'playing') return;
     
-    // CRITICAL: Only round starter can select
     const gameData = state.currentRoom?.game_data || {};
     const roundStarter = gameData.round_starter ?? 0;
     
@@ -294,7 +272,6 @@ async function playCard(cardId) {
     
     if (state.currentPhase !== 'playing') return;
     
-    // CRITICAL: Check if already played this round
     if (state.hasPlayedThisRound) {
         alert('You already played this round!');
         return;
@@ -307,7 +284,6 @@ async function playCard(cardId) {
     }
 
     try {
-        // Get current plays
         const { data: plays } = await supabaseClient
             .from('current_turn_plays')
             .select('*')
@@ -315,7 +291,6 @@ async function playCard(cardId) {
 
         const playsThisRound = plays?.length || 0;
         
-        // Calculate whose turn
         const gameData = state.currentRoom?.game_data || {};
         const roundStarter = gameData.round_starter ?? 0;
         
@@ -338,13 +313,11 @@ async function playCard(cardId) {
             return;
         }
 
-        // Calculate value
         let value = card[state.currentAttribute];
         if (state.triunfoCard && card.id === state.triunfoCard.id) {
             value = 99;
         }
 
-        // Play card
         await supabaseClient.from('current_turn_plays').insert({
             room_id: state.roomId,
             player_id: state.playerId,
@@ -353,7 +326,6 @@ async function playCard(cardId) {
             value: value
         });
 
-        // Mark played
         await supabaseClient
             .from('player_hands')
             .update({ played: true })
@@ -361,14 +333,12 @@ async function playCard(cardId) {
             .eq('player_id', state.playerId)
             .eq('card_id', cardId);
 
-        // Update local
         state.hasPlayedThisRound = true;
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         
         renderHand();
         addChatMessage('System', `Played ${card.name} (${value})`);
 
-        // Check round complete
         if (playsThisRound + 1 >= state.players.length) {
             setTimeout(resolveRound, 1500);
         }
@@ -386,7 +356,6 @@ async function resolveRound() {
             .select('*, players(*), cards(*)')
             .eq('room_id', state.roomId);
 
-        // Find winner
         const winner = plays.reduce((max, p) => {
             if (p.value > max.value) return p;
             if (p.value === max.value) {
@@ -397,7 +366,6 @@ async function resolveRound() {
             return max;
         });
 
-        // Update winner
         await supabaseClient
             .from('players')
             .update({ won_rounds: winner.players.won_rounds + 1 })
@@ -405,14 +373,11 @@ async function resolveRound() {
 
         addChatMessage('System', `🏆 ${winner.players.name} wins!`);
 
-        // Clear plays
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
 
-        // Reset for new round
         state.hasPlayedThisRound = false;
         state.currentAttribute = null;
 
-        // Check if set over
         const { data: remaining } = await supabaseClient
             .from('player_hands')
             .select('*')
@@ -423,7 +388,6 @@ async function resolveRound() {
         if (cardsLeft === 0) {
             await endSet();
         } else {
-            // New round - winner starts
             const { data: turnOrder } = await supabaseClient
                 .from('turn_order')
                 .select('*')
@@ -470,7 +434,6 @@ async function endSet() {
 
     addChatMessage('System', '📊 Set complete!');
 
-    // Reset
     state.isGameActive = false;
     state.hasBidded = false;
     state.hasPlayedThisRound = false;
@@ -485,7 +448,7 @@ async function endSet() {
 }
 
 // ==========================================
-// HAND LOADING - CRITICAL FIX
+// HAND LOADING
 // ==========================================
 
 async function loadMyHand() {
@@ -507,7 +470,6 @@ async function loadMyHand() {
 
         console.log('Raw hand records:', data?.length || 0);
 
-        // Filter unplayed - handle both boolean and integer
         const unplayed = (data || []).filter(h => {
             const played = h.played === true || h.played === 1;
             return !played;
@@ -559,7 +521,6 @@ function setupRealtime() {
                     state.isGameActive = true;
                 }
 
-                // Phase transitions
                 if (payload.old.phase === 'triunfo' && payload.new.phase === 'bidding') {
                     console.log('ENTERING BIDDING - loading hand');
                     await loadMyHand();
@@ -574,7 +535,6 @@ function setupRealtime() {
                 }
 
                 if (payload.new.phase === 'playing' && payload.old.phase === 'playing') {
-                    // New round
                     if (payload.new.current_turn !== payload.old.current_turn) {
                         state.hasPlayedThisRound = false;
                         state.currentAttribute = payload.new.current_attribute;
@@ -646,7 +606,7 @@ function renderHand() {
                     <h2 style="color:#ffd700;">How many rounds will you win?</h2>
                     <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;">
                         ${Array.from({length: cards.length + 1}, (_, i) => `
-                            <button onclick="window.submitBid(${i})" style="width:60px;height:60px;font-size:1.4rem;font-weight:bold;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:12px;color:white;cursor:pointer;">${i}</button>
+                            <button onclick="submitBid(${i})" style="width:60px;height:60px;font-size:1.4rem;font-weight:bold;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:12px;color:white;cursor:pointer;">${i}</button>
                         `).join('')}
                     </div>
                 </div>
@@ -669,7 +629,6 @@ function renderHand() {
         const isStarter = state.myPosition === roundStarter;
         const canSelect = isStarter && !state.currentAttribute;
 
-        // Attribute selector (only for round starter)
         if (canSelect) {
             container.innerHTML += `
                 <div style="text-align:center;padding:20px;background:rgba(20,27,36,0.95);border:2px solid #4299e1;border-radius:16px;margin-bottom:20px;">
@@ -677,7 +636,7 @@ function renderHand() {
                     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
                         ${ATTRIBUTES.map(attr => {
                             const colors = {car:'#ef4444',cul:'#8b5cf6',tet:'#10b981',fis:'#3b82f6',per:'#f59e0b'};
-                            return `<button onclick="window.selectAttribute('${attr}')" style="padding:12px 24px;font-size:1.1rem;font-weight:bold;border:none;border-radius:8px;cursor:pointer;background:${colors[attr]};color:white;">${ATTRIBUTE_NAMES[attr]}</button>`;
+                            return `<button onclick="selectAttribute('${attr}')" style="padding:12px 24px;font-size:1.1rem;font-weight:bold;border:none;border-radius:8px;cursor:pointer;background:${colors[attr]};color:white;">${ATTRIBUTE_NAMES[attr]}</button>`;
                         }).join('')}
                     </div>
                 </div>
@@ -690,7 +649,6 @@ function renderHand() {
             `;
         }
 
-        // Current attribute display
         if (state.currentAttribute) {
             container.innerHTML += `
                 <div style="text-align:center;padding:15px;background:rgba(255,215,0,0.1);border:2px solid #ffd700;border-radius:10px;margin-bottom:15px;">
@@ -703,7 +661,6 @@ function renderHand() {
             `;
         }
 
-        // Cards
         let cardsHtml = '<div style="display:flex;flex-wrap:wrap;gap:15px;justify-content:center;">';
         
         state.myHand.forEach(card => {
@@ -736,7 +693,7 @@ function renderHand() {
             cardsHtml += `
                 <div 
                     style="width:140px;${canPlay?'cursor:pointer;':'opacity:0.6;'}transition:transform 0.2s;background:linear-gradient(135deg,#1e293b,#334155);border:2px solid #475569;border-radius:12px;padding:12px;color:white;"
-                    ${canPlay ? `ondblclick="window.playCard(${card.id})" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'"` : ''}
+                    ${canPlay ? `ondblclick="playCard(${card.id})" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'"` : ''}
                 >
                     <div style="font-weight:bold;font-size:0.9rem;text-align:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);color:#ffd700;">
                         ${card.name} ${isTriunfo?'👑':''}
@@ -892,15 +849,6 @@ async function leaveGame() {
     localStorage.removeItem('currentRoom');
     window.location.href = 'index.html';
 }
-
-// Expose functions globally
-window.startGame = startGame;
-window.submitBid = submitBid;
-window.selectAttribute = selectAttribute;
-window.playCard = playCard;
-window.copyCode = copyCode;
-window.leaveGame = leaveGame;
-window.sendChatMessage = sendChatMessage;
 
 // Cleanup
 window.addEventListener('beforeunload', async () => {
