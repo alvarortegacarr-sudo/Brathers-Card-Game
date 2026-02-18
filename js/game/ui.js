@@ -3,7 +3,7 @@
 // ==========================================
 
 import { state } from './state.js';
-import { ATTRIBUTES, ATTRIBUTE_NAMES } from './config.js';
+import { ATTRIBUTES, ATTRIBUTE_NAMES, getAttributeColor } from './config.js';
 
 export function renderHand(cards) {
     const container = document.getElementById('handContainer');
@@ -37,7 +37,7 @@ function renderTriunfoPhase(container) {
     }
     
     container.innerHTML = `
-        <div class="triunfo-reveal" style="text-align: center; padding: 20px;">
+        <div style="text-align: center; padding: 20px;">
             <h2 style="color: #ffd700; margin-bottom: 20px;">👑 EL TRIUNFO 👑</h2>
             <div style="width: 160px; margin: 0 auto; background: linear-gradient(135deg, #1a2332 0%, #2d3748 100%); border: 3px solid #ffd700; border-radius: 12px; padding: 12px; box-shadow: 0 0 30px rgba(255,215,0,0.3);">
                 <div style="font-weight: bold; color: #ffd700; text-align: center; margin-bottom: 10px;">${state.triunfoCard.name}</div>
@@ -57,7 +57,6 @@ function renderTriunfoPhase(container) {
 
 function renderBiddingPhase(container, cards) {
     if (!state.hasBidded) {
-        // Show cards
         const cardCount = cards.length || state.cardsPerPlayer;
         
         let html = `
@@ -132,12 +131,10 @@ function renderPlayingPhase(container, cards) {
         `;
     }
     
-    // Render cards
     let cardsHtml = '<div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">';
     
     cards.forEach((card) => {
         const isTriunfo = state.triunfoCard && card.id === state.triunfoCard.id;
-        const cardStyle = 'width: 140px; cursor: pointer; transition: transform 0.2s; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; border-radius: 12px; padding: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);';
         
         let statsHtml;
         if (state.currentAttribute) {
@@ -162,7 +159,7 @@ function renderPlayingPhase(container, cards) {
         }
         
         cardsHtml += `
-            <div class="game-card" style="${cardStyle}" ondblclick="window.playCard(${card.id})" onmouseenter="this.style.transform='scale(1.05) translateY(-8px)'" onmouseleave="this.style.transform='scale(1)'">
+            <div style="width: 140px; cursor: pointer; transition: transform 0.2s; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border: 2px solid #475569; border-radius: 12px; padding: 12px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);" ondblclick="window.playCard(${card.id})" onmouseenter="this.style.transform='scale(1.05) translateY(-8px)'" onmouseleave="this.style.transform='scale(1)'">
                 <div style="font-weight: bold; font-size: 0.9rem; text-align: center; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); color: #ffd700;">
                     ${card.name} ${isTriunfo ? '👑' : ''}
                 </div>
@@ -173,17 +170,6 @@ function renderPlayingPhase(container, cards) {
     
     cardsHtml += '</div>';
     container.innerHTML += cardsHtml;
-}
-
-function getAttributeColor(attr) {
-    const colors = {
-        car: '#ef4444',
-        cul: '#8b5cf6',
-        tet: '#10b981',
-        fis: '#3b82f6',
-        per: '#f59e0b'
-    };
-    return colors[attr] || '#666';
 }
 
 export function updateGameUI() {

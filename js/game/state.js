@@ -34,6 +34,7 @@ if (!localStorage.getItem('playerId')) {
 
 export function updateCardsPerPlayer() {
     state.cardsPerPlayer = CARD_DISTRIBUTION[state.players.length] || 8;
+    console.log('Cards per player updated:', state.cardsPerPlayer, 'for', state.players.length, 'players');
 }
 
 export function resetGameState() {
@@ -44,4 +45,5 @@ export function resetGameState() {
     state.triunfoCard = null;
     state.currentAttribute = null;
     state.isStartingGame = false;
+    console.log('Game state reset');
 }

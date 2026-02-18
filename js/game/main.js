@@ -8,19 +8,21 @@ import * as ui from './ui.js';
 import { submitBid } from './bidding.js';
 import { selectAttribute, playCard } from './playing.js';
 import { endSet } from './scoring.js';
+import { supabaseClient } from './supabase.js';
 
-// Make functions available globally for HTML onclick handlers
-window.submitBid = submitBid;
-window.selectAttribute = selectAttribute;
-window.playCard = playCard;
-window.startNewSet = startNewSet;
-window.copyCode = copyCode;
-window.leaveGame = leaveGame;
-window.sendChatMessage = sendChatMessage;
+// Export functions for game.js to expose globally
+export { submitBid, selectAttribute, playCard, endSet };
 
 export async function initGame() {
+    console.log('=== INIT GAME START ===');
+    console.log('Supabase client exists:', !!window.supabaseClient);
+    console.log('Module supabaseClient:', !!supabaseClient);
+    
     const roomCode = localStorage.getItem('currentRoom');
     state.currentPlayer = localStorage.getItem('currentPlayer');
+    
+    console.log('Room code:', roomCode);
+    console.log('Player:', state.currentPlayer);
     
     if (!roomCode) {
         redirectToLobby('No room code found');
@@ -28,8 +30,9 @@ export async function initGame() {
     }
 
     try {
-        console.log('Initializing game...');
+        console.log('Fetching room...');
         const room = await db.fetchRoom(roomCode);
+        console.log('Room fetched:', room.id, 'Status:', room.status);
         
         if (room.status === 'ended') {
             redirectToLobby(`Game ended: ${room.ended_reason || 'Unknown reason'}`);
@@ -58,21 +61,34 @@ export async function initGame() {
         addLog('Connected to El Triunfo');
         addChatMessage('System', '🎴 Welcome to El Triunfo!');
         
+        console.log('=== INIT GAME COMPLETE ===');
+        
     } catch (err) {
         console.error('Initialization error:', err);
-        redirectToLobby('Failed to initialize game');
+        console.error('Stack:', err.stack);
+        redirectToLobby('Failed to initialize game: ' + err.message);
     }
 }
 
 function setupUI() {
     const roomCode = localStorage.getItem('currentRoom');
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
+    
+    // Setup start button with event listener instead of onclick
+    const startBtn = document.getElementById('startBtn');
+    if (startBtn) {
+        startBtn.addEventListener('click', startNewSet);
+    }
+    
     updateHostControls();
 }
 
 export function updateHostControls() {
     const hostControls = document.getElementById('hostControls');
-    if (!hostControls) return;
+    if (!hostControls) {
+        console.log('Host controls element not found');
+        return;
+    }
     
     const isHost = localStorage.getItem('isHost') === 'true';
     
@@ -86,30 +102,39 @@ export function updateHostControls() {
     // Force hide if game is active
     if (state.isGameActive || state.isStartingGame || state.currentRoom?.status === 'playing') {
         hostControls.style.display = 'none';
+        console.log('Hiding host controls');
         return;
     }
     
     if (isHost) {
         hostControls.style.display = 'block';
         const count = state.players.length || 1;
-        hostControls.innerHTML = `
-            <button onclick="startNewSet()" class="btn-start" ${state.isStartingGame ? 'disabled' : ''}>
-                ${state.isStartingGame ? '⏳ Starting...' : `🚀 Start Game (${count} player${count !== 1 ? 's' : ''})`}
-            </button>
-        `;
+        const btn = hostControls.querySelector('#startBtn');
+        if (btn) {
+            btn.disabled = state.isStartingGame;
+            btn.textContent = state.isStartingGame ? '⏳ Starting...' : `🚀 Start Game (${count} player${count !== 1 ? 's' : ''})`;
+        }
+        console.log('Showing host controls');
     } else {
         hostControls.style.display = 'none';
     }
 }
 
-async function startNewSet() {
-    if (state.isStartingGame) return;
+export async function startNewSet() {
+    console.log('=== START NEW SET ===');
+    console.log('isStartingGame:', state.isStartingGame);
+    console.log('Players:', state.players.length);
+    
+    if (state.isStartingGame) {
+        console.log('Already starting, returning');
+        return;
+    }
+    
     if (state.players.length < 2) {
-        alert('Need at least 2 players to start!');
+        alert('Need at least 2 players!');
         return;
     }
 
-    console.log('Starting new set...');
     state.isStartingGame = true;
     updateHostControls();
     
@@ -118,23 +143,28 @@ async function startNewSet() {
     if (hostControls) hostControls.style.display = 'none';
 
     try {
-        // Cleanup
+        console.log('Cleaning up...');
         await db.cleanupGameData();
+        
+        console.log('Resetting player stats...');
         await db.resetPlayerStats();
         
-        // Create turn order
+        console.log('Creating turn order...');
         const shuffledPlayers = [...state.players].sort(() => Math.random() - 0.5);
         await db.createTurnOrder(shuffledPlayers);
         
-        // Pick triunfo
-        const { data: allCards } = await supabaseClient.from('cards').select('*');
+        console.log('Fetching cards...');
+        const { data: allCards, error: cardsError } = await supabaseClient.from('cards').select('*');
+        if (cardsError) throw cardsError;
+        
+        console.log('Picking triunfo...');
         const randomCard = allCards[Math.floor(Math.random() * allCards.length)];
         state.triunfoCard = randomCard;
         
-        // Deal cards
+        console.log('Dealing cards...');
         await dealCards(allCards, shuffledPlayers);
         
-        // Start game with triunfo phase
+        console.log('Updating room to playing...');
         await db.updateRoom({
             status: 'playing',
             phase: 'triunfo',
@@ -149,21 +179,22 @@ async function startNewSet() {
         state.currentPhase = 'triunfo';
         state.currentRoom.status = 'playing';
         
-        addChatMessage('System', `🎴 Set ${(state.currentRoom.current_set || 0) + 1} started!`);
-        addChatMessage('System', `👑 El Triunfo is ${randomCard.name}!`);
+        console.log('Success! Game started.');
+        addChatMessage('System', `🎴 Set started! El Triunfo is ${randomCard.name}!`);
         
-        // Transition to bidding after delay
         setTimeout(async () => {
+            console.log('Transitioning to bidding...');
             await db.updateRoom({ phase: 'bidding' });
             state.isStartingGame = false;
         }, 2000);
         
     } catch (err) {
-        console.error('Start game error:', err);
+        console.error('START GAME ERROR:', err);
+        console.error('Stack:', err.stack);
         state.isStartingGame = false;
         state.isGameActive = false;
         updateHostControls();
-        alert('Failed to start game');
+        alert('Failed to start game: ' + err.message);
     }
 }
 
@@ -178,7 +209,6 @@ async function dealCards(allCards, shuffledPlayers) {
         await db.dealCardsToPlayer(player.id, playerCards);
     }
     
-    // Load my hand
     await loadMyHand();
     addChatMessage('System', `📦 ${state.cardsPerPlayer} cards dealt!`);
 }
@@ -233,12 +263,14 @@ async function updatePlayerList() {
 }
 
 function setupRealtimeSubscription() {
+    console.log('Setting up realtime subscription for room:', state.roomId);
+    
     state.subscriptions.room = supabaseClient
         .channel(`room:${state.roomId}`)
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Player update:', payload.eventType, payload.new);
+                console.log('Player update:', payload.eventType, payload.new.id);
                 
                 if (payload.eventType === 'UPDATE') {
                     const idx = state.players.findIndex(p => p.id === payload.new.id);
@@ -276,19 +308,16 @@ function setupRealtimeSubscription() {
                 state.currentPhase = payload.new.phase;
                 state.currentAttribute = payload.new.current_attribute;
                 
-                // Update game active status
                 if (payload.new.status === 'playing') {
                     state.isGameActive = true;
                 }
                 
-                // Hide host controls when game starts
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     state.isStartingGame = false;
                     const hostControls = document.getElementById('hostControls');
                     if (hostControls) hostControls.style.display = 'none';
                 }
                 
-                // Handle phase transitions
                 if (payload.new.phase === 'bidding' && payload.old.phase === 'triunfo') {
                     state.currentPhase = 'bidding';
                     await loadMyHand();
@@ -322,6 +351,8 @@ function setupRealtimeSubscription() {
             }
         )
         .subscribe();
+    
+    console.log('Realtime subscription setup complete');
 }
 
 function setupChatSubscription() {
@@ -357,7 +388,7 @@ function setupChatInput() {
     }
 }
 
-async function sendChatMessage() {
+export async function sendChatMessage() {
     const input = document.getElementById('chatInput');
     if (!input) return;
     
@@ -410,14 +441,14 @@ function startHeartbeat() {
     }, 5000);
 }
 
-function copyCode() {
+export function copyCode() {
     const code = localStorage.getItem('currentRoom');
     navigator.clipboard.writeText(code).then(() => {
         addChatMessage('System', 'Room code copied!');
     });
 }
 
-async function leaveGame() {
+export async function leaveGame() {
     if (state.heartbeatInterval) clearInterval(state.heartbeatInterval);
     if (state.subscriptions.room) await state.subscriptions.room.unsubscribe();
     if (state.subscriptions.chat) await state.subscriptions.chat.unsubscribe();
@@ -433,9 +464,6 @@ function redirectToLobby(message) {
     localStorage.removeItem('isHost');
     window.location.href = 'index.html';
 }
-
-// Start the game
-document.addEventListener('DOMContentLoaded', initGame);
 
 // Cleanup on unload
 window.addEventListener('beforeunload', async () => {

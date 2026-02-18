@@ -57,7 +57,6 @@ export async function playCard(cardId) {
         const playsThisRound = currentPlays.length;
         const roundStarter = state.currentRoom.current_round_starter || 0;
         
-        // Determine whose turn it is
         let expectedPosition;
         if (playsThisRound === 0) {
             expectedPosition = roundStarter;
@@ -71,42 +70,35 @@ export async function playCard(cardId) {
             return;
         }
         
-        // First player must select attribute first
         if (playsThisRound === 0 && !state.currentAttribute) {
             alert('Select an attribute first!');
             return;
         }
         
-        // Calculate card value
         let value = card[state.currentAttribute];
         if (state.triunfoCard && card.id === state.triunfoCard.id) {
             value = 99;
         }
         
-        // Play card
         await db.playCardToTable(cardId, state.currentAttribute, value, calculateTotalStats(card));
         
-        // Mark as played
         const handRecord = state.myHand.find(c => c.id === cardId);
         if (handRecord?.hand_record_id) {
             await db.markCardPlayed(handRecord.hand_record_id);
         }
         
-        // Update local state
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         ui.renderHand(state.myHand);
         
         const cardName = card.id === state.triunfoCard?.id ? `${card.name} 👑` : card.name;
         addChatMessage('System', `${state.currentPlayer} played ${cardName} (${value} ${ATTRIBUTE_NAMES[state.currentAttribute]})`);
         
-        // Check if round complete
         if (playsThisRound + 1 >= state.players.length) {
             setTimeout(() => resolveTurn(), 1500);
         }
         
     } catch (err) {
         console.error('Play card error:', err);
-        alert('Failed to play card. Try again.');
     }
 }
 
@@ -126,7 +118,6 @@ async function resolveTurn() {
         const plays = await db.fetchCurrentPlays();
         if (plays.length < state.players.length) return;
         
-        // Find winner with tiebreaker
         const winner = plays.reduce((max, play) => {
             if (play.value > max.value) return play;
             if (play.value === max.value) {
@@ -137,7 +128,6 @@ async function resolveTurn() {
             return max;
         });
         
-        // Award win
         const winnerPlayer = state.players.find(p => p.id === winner.player_id);
         await db.updatePlayer(winner.player_id, {
             won_rounds: (winnerPlayer?.won_rounds || 0) + 1
@@ -147,14 +137,8 @@ async function resolveTurn() {
             `${winner.cards.name} 👑` : winner.cards.name;
         addChatMessage('System', `🏆 ${winner.players.name} wins with ${winCardName}!`);
         
-        // Clear plays
         await db.clearCurrentPlays();
         
-        // Check if set is over
-        const remainingCards = await db.fetchMyHand();
-        const totalUnplayed = remainingCards.filter(h => !h.played).length;
-        
-        // Check all players' cards
         const { data: allHands } = await supabaseClient
             .from('player_hands')
             .select('played')
@@ -163,11 +147,9 @@ async function resolveTurn() {
         const totalRemaining = allHands?.filter(h => !h.played).length || 0;
         
         if (totalRemaining === 0) {
-            // End set
             const { endSet } = await import('./scoring.js');
             await endSet();
         } else {
-            // Next round
             const turnOrder = await db.fetchTurnOrder();
             const winnerEntry = turnOrder.find(t => t.player_id === winner.player_id);
             const nextStarter = winnerEntry ? winnerEntry.position : 0;

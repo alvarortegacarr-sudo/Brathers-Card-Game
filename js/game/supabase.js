@@ -2,29 +2,41 @@
 // DATABASE OPERATIONS
 // ==========================================
 
-import { state } from './state.js';
-
+// Use global supabaseClient from window (loaded by supabase.js)
 export const supabaseClient = window.supabaseClient;
+
+if (!supabaseClient) {
+    console.error('CRITICAL: supabaseClient not found on window!');
+}
 
 // Room operations
 export async function fetchRoom(roomCode) {
+    console.log('Fetching room:', roomCode);
     const { data, error } = await supabaseClient
         .from('rooms')
         .select('*, players(*), turn_order(*)')
         .eq('code', roomCode)
         .single();
     
-    if (error) throw error;
+    if (error) {
+        console.error('Fetch room error:', error);
+        throw error;
+    }
+    console.log('Room fetched:', data?.id);
     return data;
 }
 
 export async function updateRoom(updates) {
+    console.log('Updating room:', updates);
     const { error } = await supabaseClient
         .from('rooms')
         .update(updates)
         .eq('id', state.roomId);
     
-    if (error) throw error;
+    if (error) {
+        console.error('Update room error:', error);
+        throw error;
+    }
 }
 
 // Player operations
@@ -36,7 +48,7 @@ export async function fetchPlayers() {
         .order('seat_number');
     
     if (error) throw error;
-    return data;
+    return data || [];
 }
 
 export async function updatePlayer(playerId, updates) {
@@ -49,6 +61,7 @@ export async function updatePlayer(playerId, updates) {
 }
 
 export async function resetPlayerStats() {
+    console.log('Resetting player stats for', state.players.length, 'players');
     for (const player of state.players) {
         await supabaseClient
             .from('players')
@@ -63,13 +76,17 @@ export async function resetPlayerStats() {
 
 // Hand operations
 export async function fetchMyHand() {
+    console.log('Fetching hand for player:', state.playerId);
     const { data, error } = await supabaseClient
         .from('player_hands')
         .select('*, cards(*)')
         .eq('room_id', state.roomId)
         .eq('player_id', state.playerId);
     
-    if (error) throw error;
+    if (error) {
+        console.error('Fetch hand error:', error);
+        throw error;
+    }
     return data || [];
 }
 
@@ -95,6 +112,7 @@ export async function markCardPlayed(handRecordId) {
 
 // Turn order operations
 export async function createTurnOrder(shuffledPlayers) {
+    console.log('Creating turn order for', shuffledPlayers.length, 'players');
     for (let i = 0; i < shuffledPlayers.length; i++) {
         await supabaseClient
             .from('turn_order')
@@ -114,7 +132,7 @@ export async function fetchTurnOrder() {
         .order('position');
     
     if (error) throw error;
-    return data;
+    return data || [];
 }
 
 // Turn plays operations
@@ -174,6 +192,7 @@ export async function sendChatMessage(message) {
 
 // Cleanup operations
 export async function cleanupGameData() {
+    console.log('Cleaning up game data');
     await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
     await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
     await supabaseClient.from('turn_order').delete().eq('room_id', state.roomId);
@@ -189,3 +208,6 @@ export async function updateLastSeen() {
         .update({ last_seen: new Date().toISOString() })
         .eq('id', state.playerId);
 }
+
+// Import state at end to avoid circular dependency
+import { state } from './state.js';

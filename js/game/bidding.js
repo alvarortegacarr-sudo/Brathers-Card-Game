@@ -8,10 +8,10 @@ import * as ui from './ui.js';
 import { addChatMessage } from './main.js';
 
 export async function submitBid(bid) {
-    console.log('Submitting bid:', bid, 'Current phase:', state.currentPhase);
+    console.log('=== SUBMIT BID ===', bid, 'Phase:', state.currentPhase);
     
     if (state.currentPhase !== 'bidding') {
-        console.warn('Cannot bid: not in bidding phase');
+        console.warn('Cannot bid: not in bidding phase, current:', state.currentPhase);
         return;
     }
     
@@ -22,9 +22,10 @@ export async function submitBid(bid) {
     
     // Update local state immediately
     state.hasBidded = true;
-    ui.renderHand(state.myHand); // Show waiting screen
+    ui.renderHand(state.myHand);
     
     try {
+        console.log('Saving bid to database...');
         await db.updatePlayer(state.playerId, {
             predicted_rounds: bid,
             has_bid: true
@@ -33,7 +34,7 @@ export async function submitBid(bid) {
         addChatMessage('System', `You bid ${bid} rounds!`);
         
         // Check if all players have bid
-        await checkAllPlayersBid();
+        setTimeout(() => checkAllPlayersBid(), 500);
         
     } catch (err) {
         console.error('Bid error:', err);
@@ -54,12 +55,11 @@ async function checkAllPlayersBid() {
         console.log(`Bidding progress: ${biddedCount}/${totalPlayers}`);
         
         if (biddedCount >= totalPlayers) {
-            console.log('All players bid! Transitioning to playing phase...');
+            console.log('ALL PLAYERS BID! Starting game...');
             await transitionToPlayingPhase();
         }
     } catch (err) {
         console.error('Check all bid error:', err);
-        // Retry once after delay
         setTimeout(checkAllPlayersBid, 1000);
     }
 }

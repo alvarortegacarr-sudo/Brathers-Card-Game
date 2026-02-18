@@ -9,7 +9,7 @@ import { addChatMessage, updateHostControls } from './main.js';
 import { WINNING_SCORE } from './config.js';
 
 export async function endSet() {
-    console.log('Ending set...');
+    console.log('=== ENDING SET ===');
     state.currentPhase = 'scoring';
     ui.renderHand([]);
     
@@ -44,7 +44,6 @@ export async function endSet() {
         
         results.sort((a, b) => b.total - a.total);
         
-        // Display results
         let resultMsg = '📊 SET RESULTS:\n';
         results.forEach(r => {
             const status = r.predicted === r.won ? '✓' : '✗';
@@ -52,7 +51,6 @@ export async function endSet() {
         });
         addChatMessage('System', resultMsg);
         
-        // Check for game winner
         const winner = results.find(r => r.total >= WINNING_SCORE);
         if (winner) {
             addChatMessage('System', `🎉 ${winner.name} WINS THE GAME!`);
