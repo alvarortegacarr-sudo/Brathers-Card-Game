@@ -1,5 +1,5 @@
 // ==========================================
-// BIDDING PHASE LOGIC
+// BIDDING PHASE LOGIC - FIXED
 // ==========================================
 
 import { state } from './state.js';
@@ -9,10 +9,11 @@ import { addChatMessage } from './main.js';
 import { supabaseClient } from './supabase.js';
 
 export async function submitBid(bid) {
-    console.log('=== SUBMIT BID ===', bid, 'Phase:', state.currentPhase);
+    console.log('=== SUBMIT BID ===', bid);
+    console.log('Phase:', state.currentPhase);
     
     if (state.currentPhase !== 'bidding') {
-        console.warn('Cannot bid: not in bidding phase, current:', state.currentPhase);
+        console.warn('Cannot bid: not in bidding phase');
         return;
     }
     
@@ -26,7 +27,7 @@ export async function submitBid(bid) {
     ui.renderHand(state.myHand);
     
     try {
-        console.log('Saving bid to database...');
+        console.log('Saving bid...');
         await db.updatePlayer(state.playerId, {
             predicted_rounds: bid,
             has_bid: true
@@ -34,7 +35,7 @@ export async function submitBid(bid) {
         
         addChatMessage('System', `You bid ${bid} rounds!`);
         
-        // Check if all players have bid after a short delay
+        // Check if all players bid
         setTimeout(() => checkAllPlayersBid(), 500);
         
     } catch (err) {
@@ -46,10 +47,9 @@ export async function submitBid(bid) {
 }
 
 async function checkAllPlayersBid() {
-    console.log('Checking if all players have bid...');
+    console.log('Checking all players bid...');
     
     try {
-        // Fetch fresh player data directly from database
         const { data: players, error } = await supabaseClient
             .from('players')
             .select('*')
@@ -62,28 +62,26 @@ async function checkAllPlayersBid() {
         }
         
         const totalPlayers = players.length;
-        const biddedCount = players.filter(p => p.has_bid).length;
+        const biddedCount = players.filter(p => p.has_bid === true || p.has_bid === 1).length;
         
-        console.log(`Bidding progress: ${biddedCount}/${totalPlayers}`);
-        console.log('Players status:', players.map(p => `${p.name}: ${p.has_bid ? 'bid' : 'waiting'}`));
+        console.log(`Progress: ${biddedCount}/${totalPlayers}`);
+        console.log('Status:', players.map(p => `${p.name}: ${p.has_bid ? 'bid' : 'waiting'}`));
         
         if (biddedCount >= totalPlayers) {
-            console.log('ALL PLAYERS BID! Starting game...');
+            console.log('ALL BID! Transitioning...');
             await transitionToPlayingPhase();
         } else {
-            // Check again in 1 second
             setTimeout(checkAllPlayersBid, 1000);
         }
     } catch (err) {
-        console.error('Check all bid error:', err);
+        console.error('Check error:', err);
         setTimeout(checkAllPlayersBid, 1000);
     }
 }
 
 async function transitionToPlayingPhase() {
     try {
-        console.log('Transitioning to playing phase...');
-        const { error } = await supabaseClient
+        await supabaseClient
             .from('rooms')
             .update({
                 phase: 'playing',
@@ -93,16 +91,9 @@ async function transitionToPlayingPhase() {
             })
             .eq('id', state.roomId);
         
-        if (error) {
-            console.error('Transition error:', error);
-            throw error;
-        }
-        
-        console.log('Successfully transitioned to playing phase');
         addChatMessage('System', `🎮 Round 1 begins! First player selects attribute and plays card.`);
     } catch (err) {
         console.error('Transition error:', err);
-        // Retry after delay
         setTimeout(transitionToPlayingPhase, 2000);
     }
 }

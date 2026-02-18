@@ -15,8 +15,6 @@ export { submitBid, selectAttribute, playCard, endSet };
 
 export async function initGame() {
     console.log('=== INIT GAME START ===');
-    console.log('Supabase client exists:', !!window.supabaseClient);
-    console.log('Module supabaseClient:', !!supabaseClient);
     
     const roomCode = localStorage.getItem('currentRoom');
     state.currentPlayer = localStorage.getItem('currentPlayer');
@@ -65,7 +63,6 @@ export async function initGame() {
         
     } catch (err) {
         console.error('Initialization error:', err);
-        console.error('Stack:', err.stack);
         redirectToLobby('Failed to initialize game: ' + err.message);
     }
 }
@@ -74,7 +71,6 @@ function setupUI() {
     const roomCode = localStorage.getItem('currentRoom');
     document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
     
-    // Setup start button with event listener instead of onclick
     const startBtn = document.getElementById('startBtn');
     if (startBtn) {
         startBtn.addEventListener('click', startNewSet);
@@ -85,24 +81,12 @@ function setupUI() {
 
 export function updateHostControls() {
     const hostControls = document.getElementById('hostControls');
-    if (!hostControls) {
-        console.log('Host controls element not found');
-        return;
-    }
+    if (!hostControls) return;
     
     const isHost = localStorage.getItem('isHost') === 'true';
     
-    console.log('Updating host controls:', {
-        isHost,
-        isGameActive: state.isGameActive,
-        isStartingGame: state.isStartingGame,
-        roomStatus: state.currentRoom?.status
-    });
-    
-    // Force hide if game is active
     if (state.isGameActive || state.isStartingGame || state.currentRoom?.status === 'playing') {
         hostControls.style.display = 'none';
-        console.log('Hiding host controls');
         return;
     }
     
@@ -114,7 +98,6 @@ export function updateHostControls() {
             btn.disabled = state.isStartingGame;
             btn.textContent = state.isStartingGame ? '⏳ Starting...' : `🚀 Start Game (${count} player${count !== 1 ? 's' : ''})`;
         }
-        console.log('Showing host controls');
     } else {
         hostControls.style.display = 'none';
     }
@@ -122,14 +105,8 @@ export function updateHostControls() {
 
 export async function startNewSet() {
     console.log('=== START NEW SET ===');
-    console.log('isStartingGame:', state.isStartingGame);
-    console.log('Players:', state.players.length);
     
-    if (state.isStartingGame) {
-        console.log('Already starting, returning');
-        return;
-    }
-    
+    if (state.isStartingGame) return;
     if (state.players.length < 2) {
         alert('Need at least 2 players!');
         return;
@@ -138,15 +115,12 @@ export async function startNewSet() {
     state.isStartingGame = true;
     updateHostControls();
     
-    // Hide immediately
     const hostControls = document.getElementById('hostControls');
     if (hostControls) hostControls.style.display = 'none';
 
     try {
         console.log('Cleaning up...');
         await db.cleanupGameData();
-        
-        console.log('Resetting player stats...');
         await db.resetPlayerStats();
         
         console.log('Creating turn order...');
@@ -165,20 +139,15 @@ export async function startNewSet() {
         await dealCards(allCards, shuffledPlayers);
         
         console.log('Updating room to playing...');
-        const { error: updateError } = await supabaseClient
-            .from('rooms')
-            .update({
-                status: 'playing',
-                phase: 'triunfo',
-                current_set: (state.currentRoom.current_set || 0) + 1,
-                current_turn: 0,
-                triunfo_card_id: randomCard.id,
-                current_attribute: null,
-                game_data: { round_starter: 0 }
-            })
-            .eq('id', state.roomId);
-        
-        if (updateError) throw updateError;
+        await db.updateRoom({
+            status: 'playing',
+            phase: 'triunfo',
+            current_set: (state.currentRoom.current_set || 0) + 1,
+            current_turn: 0,
+            triunfo_card_id: randomCard.id,
+            current_attribute: null,
+            game_data: { round_starter: 0 }
+        });
         
         state.isGameActive = true;
         state.currentPhase = 'triunfo';
@@ -195,7 +164,6 @@ export async function startNewSet() {
         
     } catch (err) {
         console.error('START GAME ERROR:', err);
-        console.error('Stack:', err.stack);
         state.isStartingGame = false;
         state.isGameActive = false;
         updateHostControls();
@@ -211,23 +179,29 @@ async function dealCards(allCards, shuffledPlayers) {
     for (const player of shuffledPlayers) {
         const playerCards = shuffled.slice(cardIndex, cardIndex + state.cardsPerPlayer);
         cardIndex += state.cardsPerPlayer;
+        console.log(`Dealing ${playerCards.length} cards to player ${player.name} (${player.id})`);
         await db.dealCardsToPlayer(player.id, playerCards);
     }
     
+    // Load my hand immediately after dealing
     await loadMyHand();
     addChatMessage('System', `📦 ${state.cardsPerPlayer} cards dealt!`);
 }
 
-async function loadMyHand() {
-    console.log('Loading hand for player:', state.playerId);
+export async function loadMyHand() {
+    console.log('=== LOAD MY HAND ===');
+    console.log('Player ID:', state.playerId);
+    console.log('Room ID:', state.roomId);
+    
     try {
         const hand = await db.fetchMyHand();
-        console.log('Raw hand data:', hand);
+        console.log('Raw hand from DB:', hand.length, 'records');
         
-        // Filter out played cards
+        // Filter out played cards - handle both true and 1 as played
         const unplayed = hand.filter(h => {
-            // Handle both boolean and null/undefined
-            return h.played !== true;
+            const isPlayed = h.played === true || h.played === 1;
+            console.log(`Card ${h.card_id}: played=${h.played}, isPlayed=${isPlayed}`);
+            return !isPlayed;
         });
         
         console.log('Unplayed cards:', unplayed.length);
@@ -238,37 +212,36 @@ async function loadMyHand() {
             hand_record_id: h.id 
         }));
         
-        console.log('Processed hand:', state.myHand.length, 'cards');
+        console.log('Final hand:', state.myHand.map(c => c.name));
+        
         ui.renderHand(state.myHand);
     } catch (err) {
         console.error('Load hand error:', err);
+        console.error(err.stack);
     }
 }
 
 async function loadGameState() {
     try {
-        console.log('Loading game state...');
+        console.log('=== LOAD GAME STATE ===');
         const room = await db.fetchRoom(state.currentRoom.code);
         state.currentPhase = room.phase;
         state.triunfoCard = room.triunfo;
         state.currentAttribute = room.current_attribute;
         state.currentRoom = room;
         
-        // Get turn order
         const turnOrder = await db.fetchTurnOrder();
-        console.log('Turn order:', turnOrder);
-        
         const myEntry = turnOrder.find(t => t.player_id === state.playerId);
         state.myPosition = myEntry ? myEntry.position : 0;
         state.myTurnOrder = myEntry;
         
         console.log('My position:', state.myPosition);
+        console.log('Game data:', room.game_data);
         
-        // Get my player data
         const me = state.players.find(p => p.id === state.playerId);
         state.hasBidded = me?.has_bid || false;
         
-        // ALWAYS reload hand when entering playing phase
+        // ALWAYS reload hand
         await loadMyHand();
         ui.updateGameUI();
         
@@ -290,14 +263,14 @@ async function updatePlayerList() {
 }
 
 function setupRealtimeSubscription() {
-    console.log('Setting up realtime subscription for room:', state.roomId);
+    console.log('Setting up realtime for room:', state.roomId);
     
     state.subscriptions.room = supabaseClient
         .channel(`room:${state.roomId}`)
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Player update:', payload.eventType, payload.new.id);
+                console.log('Player update:', payload.eventType);
                 
                 if (payload.eventType === 'UPDATE') {
                     const idx = state.players.findIndex(p => p.id === payload.new.id);
@@ -305,9 +278,6 @@ function setupRealtimeSubscription() {
                     
                     if (payload.new.id === state.playerId) {
                         state.hasBidded = payload.new.has_bid;
-                        if (state.currentPhase === 'bidding') {
-                            ui.renderHand(state.myHand);
-                        }
                     }
                 } else if (payload.eventType === 'INSERT') {
                     state.players.push(payload.new);
@@ -316,84 +286,60 @@ function setupRealtimeSubscription() {
                 }
                 
                 await updatePlayerList();
-                
-                if (payload.eventType === 'INSERT') {
-                    addChatMessage('System', `${payload.new.name} joined`);
-                } else if (payload.eventType === 'DELETE') {
-                    addChatMessage('System', `${payload.old?.name || 'A player'} left`);
-                }
-                
                 updateHostControls();
             }
         )
         .on('postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Room update:', payload.new.phase, '<-', payload.old.phase);
+                console.log('Room update:', payload.old.phase, '->', payload.new.phase);
+                
+                const oldPhase = payload.old.phase;
+                const newPhase = payload.new.phase;
                 
                 state.currentRoom = payload.new;
-                state.currentPhase = payload.new.phase;
+                state.currentPhase = newPhase;
                 state.currentAttribute = payload.new.current_attribute;
                 
                 if (payload.new.status === 'playing') {
                     state.isGameActive = true;
                 }
                 
+                // Transition: waiting -> playing (triunfo)
                 if (payload.old.status === 'waiting' && payload.new.status === 'playing') {
                     state.isStartingGame = false;
-                    const hostControls = document.getElementById('hostControls');
-                    if (hostControls) hostControls.style.display = 'none';
+                    document.getElementById('hostControls').style.display = 'none';
                 }
                 
-                // Load hand when entering bidding phase (for all players)
-                if (payload.new.phase === 'bidding' && payload.old.phase === 'triunfo') {
-                    console.log('Phase: triunfo -> bidding, loading hand');
-                    state.currentPhase = 'bidding';
+                // Transition: triunfo -> bidding
+                if (oldPhase === 'triunfo' && newPhase === 'bidding') {
+                    console.log('ENTERING BIDDING PHASE - Loading hand');
                     await loadMyHand();
                 }
                 
-                // Load game state when entering playing phase (for all players)
-                if (payload.new.phase === 'playing' && payload.old.phase === 'bidding') {
-                    console.log('Phase: bidding -> playing, loading game state');
-                    state.currentPhase = 'playing';
-                    // Reset hasBidded for next set
+                // Transition: bidding -> playing
+                if (oldPhase === 'bidding' && newPhase === 'playing') {
+                    console.log('ENTERING PLAYING PHASE - Loading game state');
                     state.hasBidded = false;
                     await loadGameState();
                 }
                 
-                // Handle round changes within playing phase
-                if (payload.new.phase === 'playing' && payload.old.phase === 'playing') {
+                // Within playing phase: new round started
+                if (oldPhase === 'playing' && newPhase === 'playing') {
                     if (payload.new.current_turn !== payload.old.current_turn) {
-                        console.log('New round:', payload.new.current_turn);
-                        state.currentAttribute = null; // Reset attribute for new round
+                        console.log('NEW ROUND:', payload.new.current_turn);
+                        state.currentAttribute = payload.new.current_attribute;
+                        // Reload hand to get fresh state
+                        await loadMyHand();
                     }
                 }
                 
-                if (payload.new.phase !== payload.old.phase) {
-                    ui.renderHand(state.myHand);
-                    ui.updateGameUI();
-                }
-                
-                if (payload.new.triunfo_card_id && payload.new.triunfo_card_id !== state.triunfoCard?.id) {
-                    const { data: card } = await supabaseClient
-                        .from('cards')
-                        .select('*')
-                        .eq('id', payload.new.triunfo_card_id)
-                        .single();
-                    state.triunfoCard = card;
-                }
-                
-                if (payload.new.status === 'ended') {
-                    redirectToLobby(payload.new.ended_reason);
-                }
-                
-                updateHostControls();
+                ui.renderHand(state.myHand);
                 ui.updateGameUI();
+                updateHostControls();
             }
         )
         .subscribe();
-    
-    console.log('Realtime subscription setup complete');
 }
 
 function setupChatSubscription() {
@@ -402,9 +348,8 @@ function setupChatSubscription() {
         .on('postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${state.roomId}` },
             (payload) => {
-                const msg = payload.new;
-                if (msg.player_id !== state.playerId) {
-                    addChatMessage(msg.player_name, msg.message);
+                if (payload.new.player_id !== state.playerId) {
+                    addChatMessage(payload.new.player_name, payload.new.message);
                 }
             }
         )
@@ -506,7 +451,6 @@ function redirectToLobby(message) {
     window.location.href = 'index.html';
 }
 
-// Cleanup on unload
 window.addEventListener('beforeunload', async () => {
     if (state.heartbeatInterval) clearInterval(state.heartbeatInterval);
     await db.deletePlayer();
