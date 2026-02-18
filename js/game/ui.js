@@ -102,9 +102,12 @@ function renderBiddingPhase(container, cards) {
 }
 
 function renderPlayingPhase(container, cards) {
-    // Use game_data.round_starter instead of current_round_starter
-    const roundStarter = state.currentRoom?.game_data?.round_starter || 0;
+    // Get round starter from game_data
+    const gameData = state.currentRoom?.game_data || {};
+    const roundStarter = gameData.round_starter || 0;
     const isMyTurnToSelect = (state.myPosition === roundStarter) && !state.currentAttribute;
+    
+    console.log('Render playing - Round starter:', roundStarter, 'My position:', state.myPosition, 'Can select:', isMyTurnToSelect);
     
     if (isMyTurnToSelect) {
         container.innerHTML += `
@@ -117,19 +120,14 @@ function renderPlayingPhase(container, cards) {
                 </div>
             </div>
         `;
-    }
-    
-    if (state.currentAttribute) {
+    } else if (!state.currentAttribute) {
+        // Show who is selecting
         container.innerHTML += `
-            <div style="text-align: center; padding: 15px; background: rgba(255,215,0,0.1); border: 2px solid #ffd700; border-radius: 10px; margin-bottom: 15px;">
-                <div style="font-size: 1.3rem; color: #ffd700; font-weight: bold;">
-                    Playing: ${ATTRIBUTE_NAMES[state.currentAttribute]}
-                </div>
-                <div style="color: #a0aec0; font-size: 0.9rem; margin-top: 5px;">
-                    Double-click card to play
-                </div>
+            <div style="text-align: center; padding: 15px; background: rgba(255,255,255,0.05); border-radius: 10px; margin-bottom: 15px;">
+                <p style="color: #a0aec0;">Waiting for round starter to select attribute...</p>
             </div>
         `;
+    
     }
     
     let cardsHtml = '<div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">';
@@ -178,6 +176,10 @@ export function updateGameUI() {
     const turnInfo = document.getElementById('turnInfo');
     const triunfoDisplay = document.getElementById('triunfoDisplay');
     
+    // Get round starter from game_data
+    const gameData = state.currentRoom?.game_data || {};
+    const roundStarter = gameData.round_starter || 0;
+    
     if (phaseIndicator) {
         switch(state.currentPhase) {
             case 'waiting':
@@ -193,14 +195,12 @@ export function updateGameUI() {
                 phaseIndicator.style.color = state.hasBidded ? '#48bb78' : '#ffd700';
                 break;
             case 'playing':
-                // Use game_data.round_starter instead of current_round_starter
-                const roundStarter = state.currentRoom?.game_data?.round_starter || 0;
                 const isStarter = state.myPosition === roundStarter;
                 if (state.currentAttribute) {
                     phaseIndicator.textContent = `Playing: ${ATTRIBUTE_NAMES[state.currentAttribute]} | Round ${state.currentRoom?.current_turn || 1}`;
                     phaseIndicator.style.color = '#48bb78';
                 } else {
-                    phaseIndicator.textContent = isStarter ? 'Select attribute & play!' : 'Waiting for attribute...';
+                    phaseIndicator.textContent = isStarter ? 'You select attribute & play!' : 'Waiting for attribute selection...';
                     phaseIndicator.style.color = isStarter ? '#ffd700' : '#ecc94b';
                 }
                 break;
@@ -209,6 +209,7 @@ export function updateGameUI() {
                 phaseIndicator.style.color = '#4299e1';
                 break;
         }
+    
     }
     
     if (turnInfo) {

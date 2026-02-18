@@ -219,14 +219,26 @@ async function dealCards(allCards, shuffledPlayers) {
 }
 
 async function loadMyHand() {
+    console.log('Loading hand for player:', state.playerId);
     try {
         const hand = await db.fetchMyHand();
-        const unplayed = hand.filter(h => !h.played);
+        console.log('Raw hand data:', hand);
+        
+        // Filter out played cards
+        const unplayed = hand.filter(h => {
+            // Handle both boolean and null/undefined
+            return h.played !== true;
+        });
+        
+        console.log('Unplayed cards:', unplayed.length);
+        
         state.myHand = unplayed.map(h => ({ 
             ...h.cards, 
             hand_id: h.id, 
             hand_record_id: h.id 
         }));
+        
+        console.log('Processed hand:', state.myHand.length, 'cards');
         ui.renderHand(state.myHand);
     } catch (err) {
         console.error('Load hand error:', err);
@@ -235,21 +247,31 @@ async function loadMyHand() {
 
 async function loadGameState() {
     try {
+        console.log('Loading game state...');
         const room = await db.fetchRoom(state.currentRoom.code);
         state.currentPhase = room.phase;
         state.triunfoCard = room.triunfo;
         state.currentAttribute = room.current_attribute;
         state.currentRoom = room;
         
+        // Get turn order
         const turnOrder = await db.fetchTurnOrder();
+        console.log('Turn order:', turnOrder);
+        
         const myEntry = turnOrder.find(t => t.player_id === state.playerId);
         state.myPosition = myEntry ? myEntry.position : 0;
+        state.myTurnOrder = myEntry;
         
+        console.log('My position:', state.myPosition);
+        
+        // Get my player data
         const me = state.players.find(p => p.id === state.playerId);
         state.hasBidded = me?.has_bid || false;
         
+        // ALWAYS reload hand when entering playing phase
         await loadMyHand();
         ui.updateGameUI();
+        
     } catch (err) {
         console.error('Load game state error:', err);
     }
@@ -323,18 +345,28 @@ function setupRealtimeSubscription() {
                     if (hostControls) hostControls.style.display = 'none';
                 }
                 
-                // IMPORTANT: Load hand when transitioning to bidding phase
+                // Load hand when entering bidding phase (for all players)
                 if (payload.new.phase === 'bidding' && payload.old.phase === 'triunfo') {
-                    console.log('Transitioning to bidding - loading hand');
+                    console.log('Phase: triunfo -> bidding, loading hand');
                     state.currentPhase = 'bidding';
-                    await loadMyHand(); // This loads cards for all players
+                    await loadMyHand();
                 }
                 
-                // IMPORTANT: Load game state when transitioning to playing
+                // Load game state when entering playing phase (for all players)
                 if (payload.new.phase === 'playing' && payload.old.phase === 'bidding') {
-                    console.log('Transitioning to playing - loading game state');
+                    console.log('Phase: bidding -> playing, loading game state');
                     state.currentPhase = 'playing';
+                    // Reset hasBidded for next set
+                    state.hasBidded = false;
                     await loadGameState();
+                }
+                
+                // Handle round changes within playing phase
+                if (payload.new.phase === 'playing' && payload.old.phase === 'playing') {
+                    if (payload.new.current_turn !== payload.old.current_turn) {
+                        console.log('New round:', payload.new.current_turn);
+                        state.currentAttribute = null; // Reset attribute for new round
+                    }
                 }
                 
                 if (payload.new.phase !== payload.old.phase) {

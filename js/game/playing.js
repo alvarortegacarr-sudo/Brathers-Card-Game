@@ -10,14 +10,20 @@ import { calculateTotalStats, ATTRIBUTE_NAMES } from './config.js';
 
 export async function selectAttribute(attribute) {
     console.log('Selecting attribute:', attribute);
+    console.log('Current phase:', state.currentPhase);
+    console.log('Current room:', state.currentRoom);
     
     if (state.currentPhase !== 'playing') {
         console.warn('Not in playing phase');
         return;
     }
     
-    // Use game_data.round_starter instead of current_round_starter
-    const roundStarter = state.currentRoom.game_data?.round_starter || 0;
+    // Get round starter from game_data
+    const gameData = state.currentRoom.game_data || {};
+    const roundStarter = gameData.round_starter || 0;
+    
+    console.log('Round starter:', roundStarter, 'My position:', state.myPosition);
+    
     if (state.myPosition !== roundStarter) {
         alert('Only the round starter can select the attribute!');
         return;
@@ -49,29 +55,40 @@ export async function playCard(cardId) {
     
     const card = state.myHand.find(c => c.id === cardId);
     if (!card) {
-        console.warn('Card not found in hand');
+        console.warn('Card not found in hand. My hand:', state.myHand);
+        alert('Card not found in your hand!');
         return;
     }
     
     try {
         const currentPlays = await db.fetchCurrentPlays();
         const playsThisRound = currentPlays.length;
-        // Use game_data.round_starter instead of current_round_starter
-        const roundStarter = state.currentRoom.game_data?.round_starter || 0;
         
+        // Get round starter from game_data
+        const gameData = state.currentRoom.game_data || {};
+        const roundStarter = gameData.round_starter || 0;
+        
+        console.log('Plays this round:', playsThisRound, 'Round starter:', roundStarter);
+        
+        // Determine whose turn it is
         let expectedPosition;
         if (playsThisRound === 0) {
+            // First play - must be round starter
             expectedPosition = roundStarter;
         } else {
+            // Subsequent plays - go clockwise from starter
             expectedPosition = (roundStarter + playsThisRound) % state.players.length;
         }
         
+        console.log('Expected position:', expectedPosition, 'My position:', state.myPosition);
+        
         if (state.myPosition !== expectedPosition) {
             const expectedPlayer = await getPlayerAtPosition(expectedPosition);
-            alert(`Wait for ${expectedPlayer} to play!`);
+            alert(`Wait for ${expectedPlayer} to play! It's their turn.`);
             return;
         }
         
+        // First player must select attribute first
         if (playsThisRound === 0 && !state.currentAttribute) {
             alert('Select an attribute first!');
             return;
@@ -101,6 +118,7 @@ export async function playCard(cardId) {
         
     } catch (err) {
         console.error('Play card error:', err);
+        alert('Failed to play card: ' + err.message);
     }
 }
 
