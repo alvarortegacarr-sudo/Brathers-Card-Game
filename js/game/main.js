@@ -165,6 +165,7 @@ export async function startNewSet() {
         await dealCards(allCards, shuffledPlayers);
         
         console.log('Updating room to playing...');
+        // Using game_data instead of current_round_starter column
         await db.updateRoom({
             status: 'playing',
             phase: 'triunfo',
@@ -172,7 +173,7 @@ export async function startNewSet() {
             current_turn: 0,
             triunfo_card_id: randomCard.id,
             current_attribute: null,
-            current_round_starter: 0
+            game_data: { round_starter: 0 }
         });
         
         state.isGameActive = true;

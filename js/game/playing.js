@@ -16,7 +16,8 @@ export async function selectAttribute(attribute) {
         return;
     }
     
-    const roundStarter = state.currentRoom.current_round_starter || 0;
+    // Use game_data.round_starter instead of current_round_starter
+    const roundStarter = state.currentRoom.game_data?.round_starter || 0;
     if (state.myPosition !== roundStarter) {
         alert('Only the round starter can select the attribute!');
         return;
@@ -55,7 +56,8 @@ export async function playCard(cardId) {
     try {
         const currentPlays = await db.fetchCurrentPlays();
         const playsThisRound = currentPlays.length;
-        const roundStarter = state.currentRoom.current_round_starter || 0;
+        // Use game_data.round_starter instead of current_round_starter
+        const roundStarter = state.currentRoom.game_data?.round_starter || 0;
         
         let expectedPosition;
         if (playsThisRound === 0) {
@@ -155,10 +157,12 @@ async function resolveTurn() {
             const nextStarter = winnerEntry ? winnerEntry.position : 0;
             const nextTurn = (state.currentRoom.current_turn || 0) + 1;
             
+            // Update game_data with new round_starter instead of current_round_starter
+            const currentGameData = state.currentRoom.game_data || {};
             await db.updateRoom({
                 current_turn: nextTurn,
                 current_attribute: null,
-                current_round_starter: nextStarter
+                game_data: { ...currentGameData, round_starter: nextStarter }
             });
             
             addChatMessage('System', `Round ${nextTurn} begins! ${winner.players.name} selects attribute.`);
@@ -170,6 +174,10 @@ async function resolveTurn() {
 }
 
 export function isMyTurnToSelect() {
-    const roundStarter = state.currentRoom?.current_round_starter || 0;
+    // Use game_data.round_starter instead of current_round_starter
+    const roundStarter = state.currentRoom?.game_data?.round_starter || 0;
     return state.myPosition === roundStarter && !state.currentAttribute;
 }
+
+// Import supabaseClient at the end to avoid circular dependency
+import { supabaseClient } from './supabase.js';

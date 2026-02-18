@@ -102,7 +102,8 @@ function renderBiddingPhase(container, cards) {
 }
 
 function renderPlayingPhase(container, cards) {
-    const roundStarter = state.currentRoom?.current_round_starter || 0;
+    // Use game_data.round_starter instead of current_round_starter
+    const roundStarter = state.currentRoom?.game_data?.round_starter || 0;
     const isMyTurnToSelect = (state.myPosition === roundStarter) && !state.currentAttribute;
     
     if (isMyTurnToSelect) {
@@ -192,7 +193,8 @@ export function updateGameUI() {
                 phaseIndicator.style.color = state.hasBidded ? '#48bb78' : '#ffd700';
                 break;
             case 'playing':
-                const roundStarter = state.currentRoom?.current_round_starter || 0;
+                // Use game_data.round_starter instead of current_round_starter
+                const roundStarter = state.currentRoom?.game_data?.round_starter || 0;
                 const isStarter = state.myPosition === roundStarter;
                 if (state.currentAttribute) {
                     phaseIndicator.textContent = `Playing: ${ATTRIBUTE_NAMES[state.currentAttribute]} | Round ${state.currentRoom?.current_turn || 1}`;
