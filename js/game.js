@@ -117,11 +117,10 @@ async function startGame() {
         for (const p of state.players) {
             await supabaseClient
                 .from('players')
-                .update({ 
-                    bid: null, 
-                    rounds_won: 0,
-                    has_bid: false 
-                })
+            .update({ 
+            predicted_rounds: null, 
+            won_rounds: 0
+            })
                 .eq('id', p.id);
         }
 
@@ -303,7 +302,7 @@ async function placeBid(bid) {
     try {
         await supabaseClient
             .from('players')
-            .update({ bid: bid, has_bid: true })
+            .update({ predicted_rounds: bid })
             .eq('id', state.playerId);
         
         state.hasBid = true;
@@ -782,8 +781,8 @@ function updateSeatDisplay() {
         if (seatEl) {
             seatEl.querySelector('.seat-name').textContent = p.name;
             const bidEl = seatEl.querySelector('.seat-bid');
-            if (p.has_bid) {
-                bidEl.textContent = `Bid: ${p.bid}`;
+                if (p.predicted_rounds !== null) {
+                bidEl.textContent = `Bid: ${p.predicted_rounds}`;
                 bidEl.classList.add('placed');
             } else {
                 bidEl.textContent = state.phase === 'bidding' ? 'Bidding...' : '-';
