@@ -843,34 +843,30 @@ async function loadTablePlays() {
     
     // Update the center plays display
     const container = document.getElementById('playsContainer');
-    if (!container) return;
+    if (!container) {
+        console.error('playsContainer not found!');
+        return;
+    }
     
     if (!plays?.length) {
-        container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.9rem; text-align: center;">No cards played yet</p>';
+        container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
         return;
     }
     
     // Show cards in play order with animation
-    container.innerHTML = plays.map((play, index) => `
-        <div class="played-card" style="
-            background: var(--card-bg); 
-            padding: 1rem; 
-            border-radius: 10px; 
-            min-width: 110px; 
-            text-align: center; 
-            border: 3px solid ${play.seat_number === state.roundStarter ? 'var(--warning)' : 'var(--accent)'};
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            animation: slideIn 0.4s ease ${index * 0.1}s both;
-            transform: translateY(0);
-            transition: transform 0.2s;
-        ">
-            <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; font-weight: bold;">${play.players.name}</div>
-            <div style="font-size: 0.9rem; font-weight: bold; margin-bottom: 0.5rem; color: var(--text);">${play.cards.name}</div>
-            <div style="font-size: 1.5rem; font-weight: bold; color: var(--highlight); margin: 0.5rem 0;">${play.value}</div>
-            <div style="font-size: 0.75rem; color: var(--text-dim); background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
-            ${play.cards.id === state.triunfoCard?.id ? '<div style="margin-top: 0.5rem; font-size: 1.2rem;">👑</div>' : ''}
+    container.innerHTML = plays.map((play, index) => {
+        const isTriunfo = play.cards.id === state.triunfoCard?.id;
+        const isStarter = play.seat_number === state.roundStarter;
+        
+        return `
+        <div class="played-card ${isStarter ? 'starter' : ''}" style="animation-delay: ${index * 0.15}s">
+            <div class="player-name">${play.players.name}</div>
+            <div class="card-name">${play.cards.name}</div>
+            <div class="value">${play.value}</div>
+            <div class="attribute">${ATTR_NAMES[play.attribute]}</div>
+            ${isTriunfo ? '<div class="triunfo-icon">👑</div>' : ''}
         </div>
-    `).join('');
+    `}).join('');
 }
 
 async function loadGameState(room) {

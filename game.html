@@ -57,21 +57,31 @@
                         </div>
                     </div>
 
-                    <!-- Center Area -->
+                    <!-- Center Area - REORGANIZED -->
                     <div class="center">
-                        <div id="triunfo" class="triunfo hidden">
-                            <div class="label">EL TRIUNFO</div>
-                            <div class="card-name">-</div>
-                            <div class="crown">👑</div>
+                        <!-- Top: Triunfo and Discarded side by side -->
+                        <div class="top-cards">
+                            <div id="triunfo" class="triunfo hidden">
+                                <div class="label">EL TRIUNFO</div>
+                                <div class="card-name">-</div>
+                                <div class="crown">👑</div>
+                            </div>
+                            <div id="discarded" class="discarded hidden">
+                                <div class="label">DISCARDED</div>
+                                <div class="card-name">-</div>
+                            </div>
                         </div>
-                        <div id="discarded" class="discarded hidden">
-                            <div class="label">DISCARDED</div>
-                            <div class="card-name">-</div>
-                        </div>
+                        
+                        <!-- Middle: Played Cards (PROMINENT) -->
                         <div id="current-play" class="current-play">
-                            <div class="plays-container" id="playsContainer"></div>
-                            <div id="turn-indicator" class="turn-indicator">Waiting...</div>
+                            <div class="plays-label">CARDS IN PLAY</div>
+                            <div class="plays-container" id="playsContainer">
+                                <p class="no-cards">Waiting for cards...</p>
+                            </div>
                         </div>
+                        
+                        <!-- Bottom: Turn Indicator -->
+                        <div id="turn-indicator" class="turn-indicator">Waiting...</div>
                     </div>
                 </div>
 
