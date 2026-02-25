@@ -71,6 +71,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.players = room.players.sort((a, b) => a.seat_number - b.seat_number);
         state.phase = room.status === 'playing' ? (room.phase || 'waiting') : 'waiting';
         
+        // Calculate cards per player based on player count
+        state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
+        state.totalRounds = state.cardsPerPlayer;
+        
         updatePlayerCount();
         updateSeatDisplay();
         updateHostControls();
@@ -229,7 +233,7 @@ function enterPhase(phase, startTimer = true) {
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
-                loadTablePlays(); // Load any existing plays
+                loadTablePlays();
             });
             break;
             
@@ -258,7 +262,7 @@ function showTriunfo() {
 }
 
 // ==========================================
-// BIDDING (FIXED - proper restriction logic)
+// BIDDING (FIXED - proper calculation)
 // ==========================================
 
 function renderBidding() {
@@ -266,6 +270,10 @@ function renderBidding() {
     const isMyTurn = state.currentTurn === state.mySeat;
     const myPlayer = state.players.find(p => p.id === state.playerId);
     const hasBid = myPlayer?.predicted_rounds !== null && myPlayer?.predicted_rounds !== undefined;
+    
+    // FIXED: Always calculate from CARDS_PER_PLAYER to ensure it's correct
+    const calculatedCardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
+    const maxBid = calculatedCardsPerPlayer;
     
     let html = '';
     
@@ -307,19 +315,20 @@ function renderBidding() {
             </div>
         `;
     } else {
-        // FIXED: Properly calculate which bids are allowed
+        // FIXED: Properly identify last bidder and calculate restriction
         const maxSeat = Math.max(...state.players.map(p => p.seat_number));
         const isLastBidder = state.currentTurn === maxSeat;
         
-        // Get bids from players who have already bid (lower seat numbers)
+        // Get bids from players with lower seat numbers (already bid)
         const previousBidders = state.players.filter(p => 
             p.seat_number < state.mySeat && 
             p.predicted_rounds !== null && 
             p.predicted_rounds !== undefined
         );
         
-        const sumPreviousBids = previousBidders.reduce((sum, p) => sum + p.predicted_rounds, 0);
-        const maxBid = state.totalRounds;
+        const sumPreviousBids = previousBidders.reduce((sum, p) => sum + (p.predicted_rounds || 0), 0);
+        
+        console.log('Bid calculation:', { isLastBidder, sumPreviousBids, maxBid, mySeat: state.mySeat });
         
         html += `
             <div class="bidding-panel" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 12px;">
@@ -328,12 +337,14 @@ function renderBidding() {
         `;
         
         for (let i = 0; i <= maxBid; i++) {
-            // Only restrict if: I'm last bidder AND sum of previous bids + my bid would equal total rounds
-            const wouldEqualTotal = isLastBidder && (sumPreviousBids + i === maxBid);
+            // FIXED: Only block if this bid would make total equal maxBid
+            const totalWouldBe = sumPreviousBids + i;
+            const wouldEqualTotal = isLastBidder && (totalWouldBe === maxBid);
             const isDisabled = wouldEqualTotal;
             
             html += `
                 <button class="bid-btn" onclick="placeBid(${i})" ${isDisabled ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''} 
+                    title="${isDisabled ? 'Sum of all bids cannot equal ' + maxBid : ''}"
                     style="width: 50px; height: 50px; border-radius: 50%; font-size: 1.2rem; font-weight: bold; background: ${isDisabled ? 'var(--text-dim)' : 'var(--accent)'}; color: white; border: none; cursor: pointer;">
                     ${i}
                 </button>
@@ -384,7 +395,7 @@ async function placeBid(bid) {
 }
 
 // ==========================================
-// PLAYING (FIXED - round resolution)
+// PLAYING
 // ==========================================
 
 async function loadMyHand() {
@@ -498,13 +509,21 @@ async function selectAttribute(attr) {
 }
 
 async function playCard(cardId) {
-    if (!state.currentAttribute || state.hasPlayedThisRound) return;
+    if (!state.currentAttribute || state.hasPlayedThisRound) {
+        console.log('Cannot play:', { attr: state.currentAttribute, hasPlayed: state.hasPlayedThisRound });
+        return;
+    }
     
     const card = state.myHand.find(c => c.id === cardId);
-    if (!card) return;
+    if (!card) {
+        console.log('Card not found:', cardId);
+        return;
+    }
     
     const isTriunfo = card.id === state.triunfoCard?.id;
     const value = isTriunfo ? 99 : card[state.currentAttribute];
+    
+    console.log('Playing card:', card.name, 'value:', value);
     
     try {
         await supabaseClient.from('current_turn_plays').insert({
@@ -526,7 +545,7 @@ async function playCard(cardId) {
         
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        // FIXED: Use select instead of count
+        // FIXED: Use select instead of count to avoid null error
         const { data: plays, error: countError } = await supabaseClient
             .from('current_turn_plays')
             .select('id')
@@ -535,11 +554,14 @@ async function playCard(cardId) {
         if (countError) throw countError;
         
         const count = plays?.length || 0;
+        console.log('Plays this round:', count, 'Players:', state.players.length);
         
         if (count >= state.players.length) {
+            console.log('Round complete! Resolving...');
             setTimeout(resolveRound, 1500);
         } else {
             const nextTurn = (state.currentTurn % state.players.length) + 1;
+            console.log('Advancing to next turn:', nextTurn);
             await supabaseClient
                 .from('rooms')
                 .update({ current_turn: nextTurn })
@@ -563,10 +585,7 @@ async function resolveRound() {
             .select('*, players(*), cards(*)')
             .eq('room_id', state.roomId);
         
-        if (playsError) {
-            console.error('Plays fetch error:', playsError);
-            throw playsError;
-        }
+        if (playsError) throw playsError;
         
         console.log('Plays to resolve:', plays);
         
@@ -590,16 +609,10 @@ async function resolveRound() {
         
         const winnerPlayer = state.players.find(p => p.id === winner.player_id);
         
-        // Update winner's score
-        const { error: updateError } = await supabaseClient
+        await supabaseClient
             .from('players')
             .update({ won_rounds: (winnerPlayer.won_rounds || 0) + 1 })
             .eq('id', winner.player_id);
-        
-        if (updateError) {
-            console.error('Update winner error:', updateError);
-            throw updateError;
-        }
         
         addChat('System', `🏆 ${winnerPlayer.name} wins the round with ${winner.cards.name} (${winner.value})!`);
         
@@ -627,7 +640,6 @@ async function resolveRound() {
                 .update({ phase: 'scoring' })
                 .eq('id', state.roomId);
         } else {
-            // Next set
             const nextSet = state.currentSet + 1;
             console.log('Next set:', nextSet, 'Starter:', winnerPlayer.seat_number);
             
@@ -726,7 +738,7 @@ async function resetGame() {
 }
 
 // ==========================================
-// REALTIME & UI (FIXED - show played cards)
+// REALTIME & UI (FIXED - show played cards prominently)
 // ==========================================
 
 function setupRealtime() {
@@ -757,6 +769,10 @@ function setupRealtime() {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
+                // Recalculate if players changed
+                state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
+                state.totalRounds = state.cardsPerPlayer;
+                
                 updateTurnIndicator();
                 highlightActiveSeat();
                 
@@ -783,6 +799,11 @@ function setupRealtime() {
                     .order('seat_number');
                 
                 state.players = players;
+                
+                // Recalculate when players update
+                state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
+                state.totalRounds = state.cardsPerPlayer;
+                
                 updateSeatDisplay();
                 updateScoreboard();
                 
@@ -793,13 +814,13 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // FIXED: Also listen for plays to update the table display
+    // CRITICAL: Listen for plays to update the table display in real-time
     supabaseClient
         .channel(`plays-${state.roomId}`)
         .on('postgres_changes',
             { event: '*', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
             () => {
-                console.log('Plays updated, refreshing...');
+                console.log('Plays updated, refreshing table...');
                 loadTablePlays();
             }
         )
@@ -818,23 +839,36 @@ async function loadTablePlays() {
         return;
     }
     
-    console.log('Loaded plays:', plays);
+    console.log('Loaded plays for table:', plays);
     
     // Update the center plays display
     const container = document.getElementById('playsContainer');
     if (!container) return;
     
     if (!plays?.length) {
-        container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.9rem;">No cards played yet</p>';
+        container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.9rem; text-align: center;">No cards played yet</p>';
         return;
     }
     
-    container.innerHTML = plays.map(play => `
-        <div class="played-card" style="background: var(--card-bg); padding: 0.75rem; border-radius: 8px; min-width: 100px; text-align: center; border: 2px solid ${play.seat_number === state.roundStarter ? 'var(--warning)' : 'var(--accent)'}; animation: fadeIn 0.3s ease;">
-            <div style="font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.25rem;">${play.players.name}</div>
-            <div style="font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">${play.cards.name}</div>
-            <div style="font-size: 1.3rem; font-weight: bold; color: var(--highlight);">${play.value}</div>
-            <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 0.25rem;">${ATTR_NAMES[play.attribute]}</div>
+    // Show cards in play order with animation
+    container.innerHTML = plays.map((play, index) => `
+        <div class="played-card" style="
+            background: var(--card-bg); 
+            padding: 1rem; 
+            border-radius: 10px; 
+            min-width: 110px; 
+            text-align: center; 
+            border: 3px solid ${play.seat_number === state.roundStarter ? 'var(--warning)' : 'var(--accent)'};
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            animation: slideIn 0.4s ease ${index * 0.1}s both;
+            transform: translateY(0);
+            transition: transform 0.2s;
+        ">
+            <div style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.5rem; font-weight: bold;">${play.players.name}</div>
+            <div style="font-size: 0.9rem; font-weight: bold; margin-bottom: 0.5rem; color: var(--text);">${play.cards.name}</div>
+            <div style="font-size: 1.5rem; font-weight: bold; color: var(--highlight); margin: 0.5rem 0;">${play.value}</div>
+            <div style="font-size: 0.75rem; color: var(--text-dim); background: rgba(0,0,0,0.3); padding: 2px 8px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
+            ${play.cards.id === state.triunfoCard?.id ? '<div style="margin-top: 0.5rem; font-size: 1.2rem;">👑</div>' : ''}
         </div>
     `).join('');
 }
@@ -857,8 +891,13 @@ async function loadGameState(room) {
         state.roundStarter = room.game_data.round_starter;
     }
     
+    // Ensure calculations are correct
+    state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
+    state.totalRounds = state.cardsPerPlayer;
+    
     if (room.phase === 'playing') {
         await loadMyHand();
+        loadTablePlays();
     }
 }
 

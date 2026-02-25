@@ -473,4 +473,98 @@ main {
     flex-direction: column;
     align-items: center;
 }
+/* Played cards in center - PROMINENT */
+.plays-container {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    min-height: 140px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 1rem;
+    background: rgba(0,0,0,0.3);
+    border-radius: 16px;
+    margin: 1rem 0;
+    border: 2px solid var(--accent);
+}
+
+.played-card {
+    animation: slideIn 0.4s ease both;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 0.2s;
+}
+
+.played-card:hover {
+    transform: translateY(-5px) scale(1.05);
+}
+
+@keyframes slideIn {
+    from { 
+        opacity: 0; 
+        transform: translateY(-20px) scale(0.8); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0) scale(1); 
+    }
+}
+
+/* Center area improvements */
+.center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    width: 95%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 10;
+}
+
+/* Make sure triunfo is compact */
+.triunfo {
+    width: 120px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.triunfo .card-name {
+    font-size: 0.9rem;
+}
+
+.triunfo .crown {
+    font-size: 1rem;
+    margin-top: 0.25rem;
+}
+
+.discarded {
+    width: 100px;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+/* Ensure table is visible */
+.table {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto 1rem;
+    aspect-ratio: 1;
+    background: var(--bg-light);
+    border-radius: 50%;
+    flex-shrink: 0;
+    min-height: 400px;
+}
+
+/* Current play section */
+.current-play {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 0.5rem;
+}
 }
