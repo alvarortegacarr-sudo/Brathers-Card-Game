@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - CLEAN REBUILD
+// BRA - FIXED VERSION (Schema Compatible)
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -15,27 +15,26 @@ const state = {
     mySeat: parseInt(localStorage.getItem('seatNumber')) || 1,
     
     roomId: null,
-    players: [],          // { id, name, seat_number, bid, rounds_won, total_score }
-    phase: 'waiting',     // waiting, dealing, triunfo, bidding, playing, scoring
+    players: [],
+    phase: 'waiting',
     cardsPerPlayer: 0,
     totalRounds: 0,
+    gameStarting: false,  // Prevent double-start
     
-    myHand: [],           // Cards in hand
-    triunfoCard: null,    // The 99 card
-    discardedCard: null,  // For 3 players
+    myHand: [],
+    triunfoCard: null,
+    discardedCard: null,
     
-    currentRound: 0,      // Which round we're on (1 to totalRounds)
-    currentSeat: 0,       // Whose turn it is (seat number)
-    starterSeat: 0,       // Who starts this round (selects attribute)
+    currentSet: 0,        // Your schema uses current_set
+    currentTurn: 0,       // Your schema uses current_turn (seat number)
+    roundStarter: 0,      // Stored in game_data.round_starter
     currentAttribute: null,
     hasPlayedThisRound: false,
-    hasBid: false,
     
-    allCards: [],         // Cache of the 40 cards from DB
-    playsThisRound: []    // Cards played this round
+    allCards: [],
+    playsThisRound: []
 };
 
-// Initialize player ID
 if (!localStorage.getItem('playerId')) {
     localStorage.setItem('playerId', state.playerId);
 }
@@ -52,13 +51,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('roomCode').textContent = `ROOM: ${state.roomCode}`;
     
-    // Enter key for chat
     document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendChat();
     });
 
     try {
-        // Get room and players
         const { data: room, error: roomError } = await supabaseClient
             .from('rooms')
             .select('*, players(*)')
@@ -73,18 +70,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         state.roomId = room.id;
         state.players = room.players.sort((a, b) => a.seat_number - b.seat_number);
-        state.phase = room.status === 'playing' ? (room.phase || 'dealing') : 'waiting';
+        state.phase = room.status === 'playing' ? (room.phase || 'waiting') : 'waiting';
         
         updatePlayerCount();
         updateSeatDisplay();
         updateHostControls();
 
-        // Setup realtime subscriptions
         setupRealtime();
 
-        // If game already in progress, load state
+        // If game already in progress, load state and enter phase
         if (room.status === 'playing') {
             await loadGameState(room);
+            // IMPORTANT: Call enterPhase if we're past waiting
+            if (state.phase !== 'waiting') {
+                enterPhase(state.phase, false); // false = don't start timer if already in progress
+            }
         }
 
         addChat('System', 'Welcome to Bra! 🎴');
@@ -96,13 +96,28 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ==========================================
-// GAME START
+// GAME START (Protected against double-click)
 // ==========================================
 
 async function startGame() {
+    // Prevent double-start
+    if (state.gameStarting) {
+        console.log('Game already starting...');
+        return;
+    }
+    
     if (state.players.length < 2) {
         alert('Need at least 2 players');
         return;
+    }
+
+    state.gameStarting = true;
+    
+    // Disable button immediately
+    const btn = document.getElementById('startBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Starting...';
     }
 
     state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length];
@@ -113,21 +128,27 @@ async function startGame() {
         await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
-        // Reset players
+        // Reset players - use predicted_rounds (not bid)
         for (const p of state.players) {
-            await supabaseClient
+            const { error } = await supabaseClient
                 .from('players')
-            .update({ 
-            predicted_rounds: null, 
-            won_rounds: 0
-            })
+                .update({ 
+                    predicted_rounds: null, 
+                    won_rounds: 0
+                })
                 .eq('id', p.id);
+            
+            if (error) {
+                console.error('Error resetting player:', p.id, error);
+                throw error;
+            }
         }
 
         // Fetch and shuffle cards
-        const { data: allCards } = await supabaseClient.from('cards').select('*');
-        state.allCards = allCards;
+        const { data: allCards, error: cardsError } = await supabaseClient.from('cards').select('*');
+        if (cardsError) throw cardsError;
         
+        state.allCards = allCards;
         const shuffled = [...allCards].sort(() => Math.random() - 0.5);
         
         // Pick triunfo
@@ -135,13 +156,13 @@ async function startGame() {
         const triunfo = shuffled[triunfoIndex];
         state.triunfoCard = triunfo;
         
-        // Remove triunfo from deck for dealing
+        // Remove triunfo from deck
         const deck = shuffled.filter((_, i) => i !== triunfoIndex);
         
-        // Handle 3-player discard
+        // Handle 3-player discard (reveal it but don't store in DB - no column for it)
         let discarded = null;
         if (state.players.length === 3) {
-            discarded = deck.pop(); // Remove last card
+            discarded = deck.pop();
             state.discardedCard = discarded;
         }
 
@@ -152,38 +173,54 @@ async function startGame() {
             cardIndex += state.cardsPerPlayer;
             
             for (const card of playerCards) {
-                await supabaseClient.from('player_hands').insert({
+                const { error } = await supabaseClient.from('player_hands').insert({
                     room_id: state.roomId,
                     player_id: player.id,
                     card_id: card.id,
                     played: false
                 });
+                if (error) {
+                    console.error('Error dealing card:', error);
+                    throw error;
+                }
             }
         }
 
-        // Update room to playing status
-        await supabaseClient
+        // Update room - use your schema (current_turn, game_data, current_set)
+        const { error: updateError } = await supabaseClient
             .from('rooms')
             .update({
                 status: 'playing',
                 phase: 'triunfo',
                 triunfo_card_id: triunfo.id,
-                discarded_card_id: discarded?.id || null,
-                current_round: 0,
-                starter_seat: 1,  // Host starts
-                current_seat: 0,
-                current_attribute: null
+                current_set: 0,
+                current_turn: 0,  // 0 = no one's turn yet
+                current_attribute: null,
+                game_data: { round_starter: 1 }  // Host (seat 1) starts
             })
-            .eq('id', state.roomId);
+            .eq('id', state.roomId)
+            .select();  // Add .select() to confirm update
+
+        if (updateError) {
+            console.error('Error updating room:', updateError);
+            throw updateError;
+        }
 
         addChat('System', `🎴 El Triunfo is ${triunfo.name}!`);
         if (discarded) {
             addChat('System', `🗑️ Discarded: ${discarded.name}`);
         }
 
+        // Success - phase change will be handled by realtime subscription
+        
     } catch (err) {
         console.error('Start game error:', err);
-        alert('Failed to start game');
+        alert('Failed to start game: ' + err.message);
+        state.gameStarting = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🚀 Start Game';
+        }
     }
 }
 
@@ -191,18 +228,35 @@ async function startGame() {
 // PHASE HANDLERS
 // ==========================================
 
-function enterPhase(phase) {
+function enterPhase(phase, startTimer = true) {
+    console.log('Entering phase:', phase, 'Current:', state.phase);
     state.phase = phase;
+    updatePhaseInfo();
     
     switch(phase) {
         case 'triunfo':
             showTriunfo();
-            setTimeout(() => {
-                supabaseClient
-                    .from('rooms')
-                    .update({ phase: 'bidding', current_seat: 1 })
-                    .eq('id', state.roomId);
-            }, 3000);
+            if (startTimer) {
+                // Auto-advance to bidding after 3 seconds
+                setTimeout(async () => {
+                    try {
+                        console.log('Auto-advancing to bidding...');
+                        const { error } = await supabaseClient
+                            .from('rooms')
+                            .update({ 
+                                phase: 'bidding', 
+                                current_turn: 1  // Seat 1 bids first
+                            })
+                            .eq('id', state.roomId);
+                        
+                        if (error) {
+                            console.error('Error advancing to bidding:', error);
+                        }
+                    } catch (err) {
+                        console.error('Timeout error:', err);
+                    }
+                }, 3000);
+            }
             break;
             
         case 'bidding':
@@ -210,10 +264,10 @@ function enterPhase(phase) {
             break;
             
         case 'playing':
-            state.currentRound = 1;
-            state.starterSeat = 1;
-            state.currentSeat = 1;
-            state.hasBid = false;
+            state.currentSet = 1;
+            state.roundStarter = 1;
+            state.currentTurn = 1;
+            state.hasPlayedThisRound = false;
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
@@ -225,36 +279,39 @@ function enterPhase(phase) {
             break;
     }
     
-    updatePhaseInfo();
+    updateSeatDisplay();
 }
 
 function showTriunfo() {
     const triunfoDiv = document.getElementById('triunfo');
-    triunfoDiv.querySelector('.card-name').textContent = state.triunfoCard.name;
+    if (!triunfoDiv) return;
+    
+    triunfoDiv.querySelector('.card-name').textContent = state.triunfoCard?.name || '-';
     triunfoDiv.classList.remove('hidden');
     
     if (state.discardedCard) {
         const discardDiv = document.getElementById('discarded');
-        discardDiv.querySelector('.card-name').textContent = state.discardedCard.name;
-        discardDiv.classList.remove('hidden');
+        if (discardDiv) {
+            discardDiv.querySelector('.card-name').textContent = state.discardedCard.name;
+            discardDiv.classList.remove('hidden');
+        }
     }
-    
-    updatePhaseInfo('El Triunfo revealed!');
 }
 
 // ==========================================
-// BIDDING
+// BIDDING (Uses predicted_rounds)
 // ==========================================
 
 function renderBidding() {
     const container = document.getElementById('handContainer');
-    const isMyTurn = state.currentSeat === state.mySeat;
+    const isMyTurn = state.currentTurn === state.mySeat;
     const myPlayer = state.players.find(p => p.id === state.playerId);
     
-    if (myPlayer?.has_bid) {
+    // Check if I've already bid (predicted_rounds is not null)
+    if (myPlayer?.predicted_rounds !== null && myPlayer?.predicted_rounds !== undefined) {
         container.innerHTML = `
             <div class="waiting-message">
-                <h3>Bid placed: ${myPlayer.bid}</h3>
+                <h3>Bid placed: ${myPlayer.predicted_rounds}</h3>
                 <p>Waiting for others...</p>
             </div>
         `;
@@ -262,7 +319,7 @@ function renderBidding() {
     }
     
     if (!isMyTurn) {
-        const currentPlayer = state.players.find(p => p.seat_number === state.currentSeat);
+        const currentPlayer = state.players.find(p => p.seat_number === state.currentTurn);
         container.innerHTML = `
             <div class="waiting-message">
                 <p>Waiting for ${currentPlayer?.name || 'player'} to bid...</p>
@@ -273,10 +330,11 @@ function renderBidding() {
     
     // Calculate restriction for last bidder
     const bidsPlaced = state.players
-        .filter(p => p.has_bid && p.seat_number !== state.mySeat)
-        .reduce((sum, p) => sum + (p.bid || 0), 0);
+        .filter(p => p.predicted_rounds !== null && p.predicted_rounds !== undefined && p.seat_number !== state.mySeat)
+        .reduce((sum, p) => sum + p.predicted_rounds, 0);
     
-    const isLastBidder = state.currentSeat === Math.max(...state.players.map(p => p.seat_number));
+    const maxSeat = Math.max(...state.players.map(p => p.seat_number));
+    const isLastBidder = state.currentTurn === maxSeat;
     const maxBid = state.totalRounds;
     
     let html = `
@@ -288,46 +346,57 @@ function renderBidding() {
     for (let i = 0; i <= maxBid; i++) {
         const isRestricted = isLastBidder && (bidsPlaced + i === maxBid);
         html += `
-            <button class="bid-btn" onclick="placeBid(${i})" ${isRestricted ? 'disabled' : ''}>
+            <button class="bid-btn" onclick="placeBid(${i})" ${isRestricted ? 'disabled title="Sum cannot equal total rounds"' : ''}>
                 ${i}
             </button>
         `;
     }
     
-    html += '</div></div>';
+    html += '</div>';
+    if (isLastBidder) {
+        html += `<p style="color: var(--highlight); margin-top: 1rem;">You're last! Sum of all bids cannot equal ${maxBid}.</p>`;
+    }
+    html += '</div>';
+    
     container.innerHTML = html;
 }
 
 async function placeBid(bid) {
     try {
-        await supabaseClient
+        const { error } = await supabaseClient
             .from('players')
-            .update({ predicted_rounds: bid })
+            .update({ predicted_rounds: bid })  // Use predicted_rounds
             .eq('id', state.playerId);
         
-        state.hasBid = true;
+        if (error) throw error;
+        
+        addChat('System', `${state.playerName} bid ${bid}`);
         
         // Move to next seat or start playing
         const maxSeat = Math.max(...state.players.map(p => p.seat_number));
-        const nextSeat = state.currentSeat >= maxSeat ? 0 : state.currentSeat + 1;
+        const nextTurn = state.currentTurn >= maxSeat ? 0 : state.currentTurn + 1;
         
-        if (nextSeat === 0) {
+        if (nextTurn === 0) {
             // All bid, start playing
+            console.log('All players bid, starting play...');
             await supabaseClient
                 .from('rooms')
-                .update({ phase: 'playing', current_seat: 1 })
+                .update({ 
+                    phase: 'playing', 
+                    current_turn: 1,
+                    current_set: 1
+                })
                 .eq('id', state.roomId);
         } else {
             await supabaseClient
                 .from('rooms')
-                .update({ current_seat: nextSeat })
+                .update({ current_turn: nextTurn })
                 .eq('id', state.roomId);
         }
         
-        addChat('System', `${state.playerName} bid ${bid}`);
-        
     } catch (err) {
         console.error('Bid error:', err);
+        alert('Failed to place bid');
     }
 }
 
@@ -337,17 +406,21 @@ async function placeBid(bid) {
 
 async function loadMyHand() {
     try {
-        const { data: handData } = await supabaseClient
+        const { data: handData, error } = await supabaseClient
             .from('player_hands')
             .select('*, cards(*)')
             .eq('room_id', state.roomId)
             .eq('player_id', state.playerId)
             .eq('played', false);
         
-        state.myHand = handData.map(h => ({
+        if (error) throw error;
+        
+        state.myHand = (handData || []).map(h => ({
             ...h.cards,
             handId: h.id
         }));
+        
+        console.log('Hand loaded:', state.myHand.length, 'cards');
         
     } catch (err) {
         console.error('Load hand error:', err);
@@ -356,11 +429,12 @@ async function loadMyHand() {
 
 function renderHand() {
     const container = document.getElementById('handContainer');
+    if (!container) return;
     
     if (state.phase !== 'playing') return;
     
-    const isStarter = state.starterSeat === state.mySeat;
-    const isMyTurn = state.currentSeat === state.mySeat;
+    const isStarter = state.roundStarter === state.mySeat;
+    const isMyTurn = state.currentTurn === state.mySeat;
     
     let html = '';
     
@@ -379,14 +453,13 @@ function renderHand() {
             </div>
         `;
     } else if (!state.currentAttribute) {
-        const starter = state.players.find(p => p.seat_number === state.starterSeat);
+        const starter = state.players.find(p => p.seat_number === state.roundStarter);
         html += `
             <div class="waiting-message">
                 <p>Waiting for ${starter?.name} to select attribute...</p>
             </div>
         `;
     } else {
-        // Show current attribute
         html += `
             <div style="text-align: center; margin-bottom: 1rem;">
                 <span style="color: var(--highlight); font-size: 1.2rem; font-weight: bold;">
@@ -401,7 +474,7 @@ function renderHand() {
     html += '<div style="display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;">';
     
     state.myHand.forEach(card => {
-        const isTriunfo = card.id === state.triunfoCard.id;
+        const isTriunfo = card.id === state.triunfoCard?.id;
         const canPlay = isMyTurn && state.currentAttribute && !state.hasPlayedThisRound;
         
         html += `
@@ -427,10 +500,12 @@ function renderHand() {
 
 async function selectAttribute(attr) {
     try {
-        await supabaseClient
+        const { error } = await supabaseClient
             .from('rooms')
             .update({ current_attribute: attr })
             .eq('id', state.roomId);
+        
+        if (error) throw error;
         
         state.currentAttribute = attr;
         renderHand();
@@ -447,13 +522,12 @@ async function playCard(cardId) {
     const card = state.myHand.find(c => c.id === cardId);
     if (!card) return;
     
-    // Calculate value (99 if triunfo)
-    const isTriunfo = card.id === state.triunfoCard.id;
+    const isTriunfo = card.id === state.triunfoCard?.id;
     const value = isTriunfo ? 99 : card[state.currentAttribute];
     
     try {
         // Record play
-        await supabaseClient.from('current_turn_plays').insert({
+        const { error: playError } = await supabaseClient.from('current_turn_plays').insert({
             room_id: state.roomId,
             player_id: state.playerId,
             card_id: cardId,
@@ -462,11 +536,15 @@ async function playCard(cardId) {
             seat_number: state.mySeat
         });
         
+        if (playError) throw playError;
+        
         // Mark card as played
-        await supabaseClient
+        const { error: handError } = await supabaseClient
             .from('player_hands')
             .update({ played: true })
             .eq('id', card.handId);
+        
+        if (handError) throw handError;
         
         // Remove from local hand
         state.myHand = state.myHand.filter(c => c.id !== cardId);
@@ -475,19 +553,21 @@ async function playCard(cardId) {
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
         // Check if round complete
-        const { data: plays } = await supabaseClient
+        const { data: plays, error: countError } = await supabaseClient
             .from('current_turn_plays')
             .select('*')
             .eq('room_id', state.roomId);
         
+        if (countError) throw countError;
+        
         if (plays.length >= state.players.length) {
             setTimeout(resolveRound, 1500);
         } else {
-            // Advance to next seat
-            const nextSeat = (state.currentSeat % state.players.length) + 1;
+            // Advance to next seat (clockwise)
+            const nextTurn = (state.currentTurn % state.players.length) + 1;
             await supabaseClient
                 .from('rooms')
-                .update({ current_seat: nextSeat })
+                .update({ current_turn: nextTurn })
                 .eq('id', state.roomId);
         }
         
@@ -495,6 +575,7 @@ async function playCard(cardId) {
         
     } catch (err) {
         console.error('Play card error:', err);
+        state.hasPlayedThisRound = false;
     }
 }
 
@@ -504,10 +585,12 @@ async function playCard(cardId) {
 
 async function resolveRound() {
     try {
-        const { data: plays } = await supabaseClient
+        const { data: plays, error: playsError } = await supabaseClient
             .from('current_turn_plays')
-            .select('*, cards(*)')
+            .select('*, players(*), cards(*)')
             .eq('room_id', state.roomId);
+        
+        if (playsError) throw playsError;
         
         // Find winner (highest value, tiebreaker: highest total stats)
         const winner = plays.reduce((best, play) => {
@@ -522,23 +605,30 @@ async function resolveRound() {
         
         const winnerPlayer = state.players.find(p => p.id === winner.player_id);
         
-        // Update winner's rounds_won
-        await supabaseClient
+        // Update winner's won_rounds
+        const { error: updateError } = await supabaseClient
             .from('players')
-            .update({ rounds_won: (winnerPlayer.rounds_won || 0) + 1 })
+            .update({ won_rounds: (winnerPlayer.won_rounds || 0) + 1 })
             .eq('id', winner.player_id);
+        
+        if (updateError) throw updateError;
         
         addChat('System', `🏆 ${winnerPlayer.name} wins the round!`);
         
         // Clear plays
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
-        // Check if game over (all cards played)
-        const { data: remaining } = await supabaseClient
+        state.hasPlayedThisRound = false;
+        state.currentAttribute = null;
+        
+        // Check if game over
+        const { data: remaining, error: remainingError } = await supabaseClient
             .from('player_hands')
             .select('*')
             .eq('room_id', state.roomId)
             .eq('played', false);
+        
+        if (remainingError) throw remainingError;
         
         if (remaining.length === 0) {
             // Game over
@@ -547,19 +637,20 @@ async function resolveRound() {
                 .update({ phase: 'scoring' })
                 .eq('id', state.roomId);
         } else {
-            // Next round
-            const nextRound = state.currentRound + 1;
+            // Next set/round
+            const nextSet = state.currentSet + 1;
+            const winnerSeat = winnerPlayer.seat_number;
+            
             await supabaseClient
                 .from('rooms')
                 .update({
-                    current_round: nextRound,
-                    starter_seat: winnerPlayer.seat_number,
-                    current_seat: winnerPlayer.seat_number,
-                    current_attribute: null
+                    current_set: nextSet,
+                    current_turn: winnerSeat,  // Winner starts next
+                    current_attribute: null,
+                    game_data: { round_starter: winnerSeat }
                 })
                 .eq('id', state.roomId);
             
-            state.hasPlayedThisRound = false;
             await loadMyHand();
             renderHand();
         }
@@ -574,56 +665,85 @@ async function resolveRound() {
 // ==========================================
 
 async function calculateScores() {
-    const players = state.players;
-    let scoreHtml = '<div class="score-results">';
-    
-    for (const p of players) {
-        const bid = p.bid || 0;
-        const won = p.rounds_won || 0;
-        const correct = bid === won;
-        
-        let points = (won * 2) + (correct ? 3 : -2);
-        
-        // Update total score
-        const newTotal = (p.total_score || 0) + points;
-        await supabaseClient
+    try {
+        // Refresh players to get final stats
+        const { data: players, error } = await supabaseClient
             .from('players')
-            .update({ total_score: newTotal })
-            .eq('id', p.id);
+            .select('*')
+            .eq('room_id', state.roomId);
         
-        scoreHtml += `
-            <div class="score-item" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                <div style="font-weight: bold; margin-bottom: 0.5rem;">${p.name}</div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-                    <span>Bid: ${bid} | Won: ${won}</span>
-                    <span style="color: ${correct ? 'var(--success)' : 'var(--highlight)'}">
-                        ${correct ? '✓ Exact!' : '✗ Miss'} 
-                    </span>
+        if (error) throw error;
+        
+        state.players = players;
+        
+        let scoreHtml = '<div class="score-results">';
+        
+        for (const p of players) {
+            const bid = p.predicted_rounds || 0;
+            const won = p.won_rounds || 0;
+            const correct = bid === won;
+            
+            let points = (won * 2) + (correct ? 3 : -2);
+            const newTotal = (p.total_score || 0) + points;
+            
+            // Update total score
+            await supabaseClient
+                .from('players')
+                .update({ total_score: newTotal })
+                .eq('id', p.id);
+            
+            scoreHtml += `
+                <div class="score-item" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                    <div style="font-weight: bold; margin-bottom: 0.5rem;">${p.name}</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                        <span>Bid: ${bid} | Won: ${won}</span>
+                        <span style="color: ${correct ? 'var(--success)' : 'var(--highlight)'}">
+                            ${correct ? '✓ Exact!' : '✗ Miss'} 
+                        </span>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 1.1rem;">
+                        ${won}×2 ${correct ? '+3' : '-2'} = <strong>${points} points</strong>
+                    </div>
                 </div>
-                <div style="margin-top: 0.5rem; font-size: 1.1rem;">
-                    ${won}×2 ${correct ? '+3' : '-2'} = <strong>${points} points</strong>
-                </div>
+            `;
+        }
+        
+        scoreHtml += '</div>';
+        
+        document.getElementById('handContainer').innerHTML = `
+            <div style="text-align: center; padding: 2rem;">
+                <h2>Game Over!</h2>
+                ${scoreHtml}
+                ${state.isHost ? '<button onclick="resetGame()" class="start-btn" style="margin-top: 2rem;">Play Again</button>' : ''}
             </div>
         `;
+        
+        updateScoreboard();
+        
+    } catch (err) {
+        console.error('Calculate scores error:', err);
     }
-    
-    scoreHtml += '</div>';
-    
-    document.getElementById('handContainer').innerHTML = `
-        <div style="text-align: center; padding: 2rem;">
-            <h2>Game Over!</h2>
-            ${scoreHtml}
-            ${state.isHost ? '<button onclick="resetGame()" class="start-btn" style="margin-top: 2rem;">Play Again</button>' : ''}
-        </div>
-    `;
-    
-    updateScoreboard();
 }
 
 async function resetGame() {
+    state.gameStarting = false;
+    const btn = document.getElementById('startBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🚀 Start Game';
+    }
+    
     await supabaseClient
         .from('rooms')
-        .update({ status: 'waiting', phase: 'waiting' })
+        .update({ 
+            status: 'waiting', 
+            phase: 'waiting',
+            current_turn: 0,
+            current_set: 0,
+            current_attribute: null,
+            triunfo_card_id: null,
+            game_data: {}
+        })
         .eq('id', state.roomId);
 }
 
@@ -638,43 +758,48 @@ function setupRealtime() {
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${state.roomId}` },
             async (payload) => {
+                console.log('Room update:', payload.new);
                 const room = payload.new;
+                const oldRoom = payload.old;
                 
-                // Phase transitions
-                if (payload.old.phase !== room.phase) {
-                    if (room.phase === 'triunfo') {
-                        // Load triunfo info
+                // Handle phase transitions
+                if (oldRoom.phase !== room.phase) {
+                    console.log(`Phase: ${oldRoom.phase} -> ${room.phase}`);
+                    
+                    // Load triunfo info if entering triunfo phase
+                    if (room.phase === 'triunfo' && room.triunfo_card_id) {
                         const { data: card } = await supabaseClient
                             .from('cards')
                             .select('*')
                             .eq('id', room.triunfo_card_id)
                             .single();
                         state.triunfoCard = card;
-                        
-                        if (room.discarded_card_id) {
-                            const { data: discard } = await supabaseClient
-                                .from('cards')
-                                .select('*')
-                                .eq('id', room.discarded_card_id)
-                                .single();
-                            state.discardedCard = discard;
-                        }
                     }
                     
-                    enterPhase(room.phase);
+                    // Enter new phase (with timer only if not already in this phase)
+                    enterPhase(room.phase, true);
                 }
                 
                 // Update game state
-                state.currentRound = room.current_round || 0;
-                state.starterSeat = room.starter_seat || 1;
-                state.currentSeat = room.current_seat || 0;
+                state.currentSet = room.current_set || 0;
+                state.currentTurn = room.current_turn || 0;
                 state.currentAttribute = room.current_attribute;
+                
+                // Get round starter from game_data
+                if (room.game_data && room.game_data.round_starter) {
+                    state.roundStarter = room.game_data.round_starter;
+                }
                 
                 // Refresh UI
                 updateTurnIndicator();
                 highlightActiveSeat();
                 
                 if (room.phase === 'playing') {
+                    if (oldRoom.current_set !== room.current_set) {
+                        // New set/round
+                        state.hasPlayedThisRound = false;
+                        await loadMyHand();
+                    }
                     renderHand();
                     loadTablePlays();
                 }
@@ -725,6 +850,8 @@ async function loadTablePlays() {
         .eq('room_id', state.roomId);
     
     const container = document.getElementById('playsContainer');
+    if (!container) return;
+    
     if (!plays || plays.length === 0) {
         container.innerHTML = '';
         return;
@@ -750,20 +877,13 @@ async function loadGameState(room) {
         state.triunfoCard = card;
     }
     
-    // Load discarded
-    if (room.discarded_card_id) {
-        const { data: card } = await supabaseClient
-            .from('cards')
-            .select('*')
-            .eq('id', room.discarded_card_id)
-            .single();
-        state.discardedCard = card;
-    }
-    
-    state.currentRound = room.current_round || 0;
-    state.starterSeat = room.starter_seat || 1;
-    state.currentSeat = room.current_seat || 0;
+    state.currentSet = room.current_set || 0;
+    state.currentTurn = room.current_turn || 0;
     state.currentAttribute = room.current_attribute;
+    
+    if (room.game_data && room.game_data.round_starter) {
+        state.roundStarter = room.game_data.round_starter;
+    }
     
     if (room.phase === 'playing') {
         await loadMyHand();
@@ -781,7 +901,9 @@ function updateSeatDisplay() {
         if (seatEl) {
             seatEl.querySelector('.seat-name').textContent = p.name;
             const bidEl = seatEl.querySelector('.seat-bid');
-                if (p.predicted_rounds !== null) {
+            
+            // Use predicted_rounds instead of bid
+            if (p.predicted_rounds !== null && p.predicted_rounds !== undefined) {
                 bidEl.textContent = `Bid: ${p.predicted_rounds}`;
                 bidEl.classList.add('placed');
             } else {
@@ -809,28 +931,29 @@ function updateSeatDisplay() {
 
 function highlightActiveSeat() {
     document.querySelectorAll('.seat').forEach(el => el.classList.remove('active'));
-    if (state.currentSeat > 0) {
-        const seatEl = document.getElementById(`seat-${state.currentSeat}`);
+    if (state.currentTurn > 0) {
+        const seatEl = document.getElementById(`seat-${state.currentTurn}`);
         if (seatEl) seatEl.classList.add('active');
     }
 }
 
 function updateTurnIndicator() {
     const indicator = document.getElementById('turn-indicator');
+    if (!indicator) return;
     
     if (state.phase === 'waiting') {
         indicator.textContent = 'Waiting for host...';
     } else if (state.phase === 'triunfo') {
         indicator.textContent = 'El Triunfo revealed!';
     } else if (state.phase === 'bidding') {
-        const current = state.players.find(p => p.seat_number === state.currentSeat);
+        const current = state.players.find(p => p.seat_number === state.currentTurn);
         indicator.textContent = current ? `${current.name} is bidding...` : 'Bidding...';
     } else if (state.phase === 'playing') {
         if (state.currentAttribute) {
-            const current = state.players.find(p => p.seat_number === state.currentSeat);
-            indicator.textContent = `Round ${state.currentRound} - ${ATTR_NAMES[state.currentAttribute]} - ${current?.name}'s turn`;
+            const current = state.players.find(p => p.seat_number === state.currentTurn);
+            indicator.textContent = `Set ${state.currentSet} - ${ATTR_NAMES[state.currentAttribute]} - ${current?.name}'s turn`;
         } else {
-            const starter = state.players.find(p => p.seat_number === state.starterSeat);
+            const starter = state.players.find(p => p.seat_number === state.roundStarter);
             indicator.textContent = `${starter?.name} selects attribute...`;
         }
     }
@@ -838,6 +961,8 @@ function updateTurnIndicator() {
 
 function updatePhaseInfo(msg) {
     const el = document.getElementById('phaseInfo');
+    if (!el) return;
+    
     if (msg) {
         el.textContent = msg;
     } else {
@@ -854,25 +979,30 @@ function updatePhaseInfo(msg) {
 
 function updateHostControls() {
     const controls = document.getElementById('hostControls');
+    if (!controls) return;
+
     if (state.isHost && state.phase === 'waiting') {
         controls.classList.remove('hidden');
         const minPlayers = controls.querySelector('.min-players');
-        minPlayers.textContent = state.players.length < 2 
-            ? `Need ${2 - state.players.length} more player(s)` 
-            : 'Ready to start!';
+        if (minPlayers) {
+            minPlayers.textContent = state.players.length < 2 
+                ? `Need ${2 - state.players.length} more player(s)` 
+                : 'Ready to start!';
+        }
     } else {
         controls.classList.add('hidden');
     }
 }
 
 function updatePlayerCount() {
-    document.getElementById('playerCount')?.textContent 
-        ? document.getElementById('playerCount').textContent = state.players.length 
-        : null;
+    const el = document.getElementById('playerCount');
+    if (el) el.textContent = state.players.length;
 }
 
 function updatePlayerList() {
     const list = document.getElementById('playerList');
+    if (!list) return;
+    
     list.innerHTML = state.players.map(p => `
         <li>
             <span>${p.name} ${p.seat_number === state.mySeat ? '(You)' : ''} ${p.id === state.playerId && state.isHost ? '👑' : ''}</span>
@@ -916,6 +1046,8 @@ async function sendChat() {
 
 function addChat(sender, message) {
     const log = document.getElementById('chatLog');
+    if (!log) return;
+    
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const isSystem = sender === 'System';
     
