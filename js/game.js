@@ -498,25 +498,16 @@ async function selectAttribute(attr) {
 }
 
 async function playCard(cardId) {
-    if (!state.currentAttribute || state.hasPlayedThisRound) {
-        console.log('Cannot play:', { attr: state.currentAttribute, hasPlayed: state.hasPlayedThisRound });
-        return;
-    }
+    if (!state.currentAttribute || state.hasPlayedThisRound) return;
     
     const card = state.myHand.find(c => c.id === cardId);
-    if (!card) {
-        console.log('Card not found:', cardId);
-        return;
-    }
+    if (!card) return;
     
     const isTriunfo = card.id === state.triunfoCard?.id;
     const value = isTriunfo ? 99 : card[state.currentAttribute];
     
-    console.log('Playing card:', card.name, 'value:', value);
-    
     try {
-        // Insert play
-        const { error: insertError } = await supabaseClient.from('current_turn_plays').insert({
+        await supabaseClient.from('current_turn_plays').insert({
             room_id: state.roomId,
             player_id: state.playerId,
             card_id: cardId,
@@ -525,49 +516,30 @@ async function playCard(cardId) {
             seat_number: state.mySeat
         });
         
-        if (insertError) {
-            console.error('Insert play error:', insertError);
-            throw insertError;
-        }
-        
-        // Mark card as played
-        const { error: updateError } = await supabaseClient
+        await supabaseClient
             .from('player_hands')
             .update({ played: true })
             .eq('id', card.handId);
         
-        if (updateError) {
-            console.error('Update hand error:', updateError);
-            throw updateError;
-        }
-        
-        // Update local state
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         state.hasPlayedThisRound = true;
         
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        // Check if round complete - FIXED: Use count query
-        const { data: playCount, error: countError } = await supabaseClient
+        // FIXED: Use select instead of count
+        const { data: plays, error: countError } = await supabaseClient
             .from('current_turn_plays')
-            .select('id', { count: 'exact', head: true })
+            .select('id')
             .eq('room_id', state.roomId);
         
-        if (countError) {
-            console.error('Count error:', countError);
-            throw countError;
-        }
+        if (countError) throw countError;
         
-        const count = playCount.count || 0;
-        console.log('Plays this round:', count, 'Players:', state.players.length);
+        const count = plays?.length || 0;
         
         if (count >= state.players.length) {
-            console.log('Round complete! Resolving...');
             setTimeout(resolveRound, 1500);
         } else {
-            // Advance to next seat
             const nextTurn = (state.currentTurn % state.players.length) + 1;
-            console.log('Advancing to next turn:', nextTurn);
             await supabaseClient
                 .from('rooms')
                 .update({ current_turn: nextTurn })
