@@ -437,4 +437,40 @@ main {
         border-left: none;
         border-top: 1px solid var(--accent);
     }
+    /* Played cards in center */
+.plays-container {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    min-height: 120px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 1rem;
+    background: rgba(0,0,0,0.2);
+    border-radius: 12px;
+    margin: 0.5rem 0;
+}
+
+.played-card {
+    animation: fadeIn 0.3s ease;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+}
+
+.played-card:hover {
+    transform: translateY(-2px);
+    transition: transform 0.2s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Make sure table area shows plays prominently */
+.current-play {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
 }
