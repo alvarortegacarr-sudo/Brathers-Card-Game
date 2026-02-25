@@ -3,117 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>El Triunfo - Card Game</title>
+    <title>Bra - Card Game</title>
     <link rel="stylesheet" href="css/game.css">
-    <!-- Load Supabase first as regular script -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/supabase.js"></script>
 </head>
 <body>
-    <div class="game-wrapper">
-        <!-- Host Controls -->
-        <div class="host-controls" id="hostControls" style="display: none;">
-            <button class="btn-start" id="startBtn">🚀 Start Game</button>
-        </div>
-
-        <!-- Top Bar -->
-        <div class="top-bar">
+    <div id="app">
+        <!-- Header -->
+        <header>
             <div class="room-info">
-                <span class="code" id="displayCode">ROOM: ----</span>
-                <button onclick="copyCode()" class="btn-small">📋 Copy</button>
+                <span id="roomCode">ROOM: ----</span>
+                <button onclick="copyCode()">Copy</button>
             </div>
-            <div class="game-status" id="gameStatus">Waiting for players...</div>
-            <button onclick="leaveGame()" class="btn-danger">Leave</button>
-        </div>
+            <div class="game-title">BRA</div>
+            <button onclick="leaveGame()" class="leave-btn">Leave</button>
+        </header>
 
-        <div class="main-layout">
-            <!-- Game Table -->
-            <div class="table-section">
-                <div class="table">
-                    <!-- Seat positions -->
-                    <div class="seat seat-1" id="seat-1">
-                        <div class="player-slot empty">
-                            <div class="avatar">?</div>
-                            <div class="name">Empty</div>
+        <!-- Main Game Area -->
+        <main>
+            <!-- Table -->
+            <div class="table-area">
+                <div id="table" class="table">
+                    <!-- Seats 1-5 positioned absolutely -->
+                    <div class="seat" id="seat-1" data-seat="1">
+                        <div class="seat-info">
+                            <div class="seat-name">Empty</div>
+                            <div class="seat-bid">-</div>
                         </div>
                     </div>
-                    <div class="seat seat-2" id="seat-2">
-                        <div class="player-slot empty">
-                            <div class="avatar">?</div>
-                            <div class="name">Empty</div>
+                    <div class="seat" id="seat-2" data-seat="2">
+                        <div class="seat-info">
+                            <div class="seat-name">Empty</div>
+                            <div class="seat-bid">-</div>
                         </div>
                     </div>
-                    <div class="seat seat-3" id="seat-3">
-                        <div class="player-slot empty">
-                            <div class="avatar">?</div>
-                            <div class="name">Empty</div>
+                    <div class="seat" id="seat-3" data-seat="3">
+                        <div class="seat-info">
+                            <div class="seat-name">Empty</div>
+                            <div class="seat-bid">-</div>
                         </div>
                     </div>
-                    <div class="seat seat-4" id="seat-4">
-                        <div class="player-slot empty">
-                            <div class="avatar">?</div>
-                            <div class="name">Empty</div>
+                    <div class="seat" id="seat-4" data-seat="4">
+                        <div class="seat-info">
+                            <div class="seat-name">Empty</div>
+                            <div class="seat-bid">-</div>
                         </div>
                     </div>
-                    <div class="seat seat-5" id="seat-5">
-                        <div class="player-slot empty">
-                            <div class="avatar">?</div>
-                            <div class="name">Empty</div>
+                    <div class="seat" id="seat-5" data-seat="5">
+                        <div class="seat-info">
+                            <div class="seat-name">Empty</div>
+                            <div class="seat-bid">-</div>
                         </div>
                     </div>
 
                     <!-- Center Area -->
-                    <div class="center-area">
-                        <div class="triunfo-display" id="triunfoDisplay">
-                            <div class="card-back">🂠</div>
+                    <div class="center">
+                        <div id="triunfo" class="triunfo hidden">
+                            <div class="label">EL TRIUNFO</div>
+                            <div class="card-name">-</div>
+                            <div class="crown">👑</div>
                         </div>
-                        <div class="turn-info" id="turnInfo">Waiting to start...</div>
+                        <div id="discarded" class="discarded hidden">
+                            <div class="label">DISCARDED</div>
+                            <div class="card-name">-</div>
+                        </div>
+                        <div id="current-play" class="current-play">
+                            <div class="plays-container" id="playsContainer"></div>
+                            <div id="turn-indicator" class="turn-indicator">Waiting...</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Player Hand Area -->
-                <div class="player-area">
-                    <div class="game-info" id="gameInfo">
-                        <div class="phase-indicator" id="phaseIndicator">Waiting for host...</div>
-                    </div>
-                    <div class="hand-container" id="handContainer">
-                        <div class="waiting-message">Waiting for game to start...</div>
-                    </div>
+                <!-- Host Controls -->
+                <div id="hostControls" class="host-controls hidden">
+                    <button onclick="startGame()" class="start-btn">Start Game</button>
+                    <p class="min-players">Need at least 2 players</p>
                 </div>
             </div>
 
-            <!-- Side Panel -->
-            <div class="side-panel">
-                <div class="player-list" id="playerList">
-                    <h3>Players (<span id="playerCount">0</span>/5)</h3>
-                    <ul id="playersUl"></ul>
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="players-panel">
+                    <h3>Players</h3>
+                    <ul id="playerList"></ul>
                 </div>
                 
-                <div class="scoreboard" id="scoreboard">
+                <div class="scores-panel">
                     <h3>Scores</h3>
-                    <div class="score-content">Waiting for game...</div>
+                    <div id="scoreList"></div>
                 </div>
-                
-                <div class="chat-container">
-                    <div class="chat-header">💬 Chat</div>
-                    <div class="chat-messages" id="chatLog"></div>
-                    <div class="chat-input-area">
-                        <input type="text" id="chatInput" placeholder="Type a message..." maxlength="200">
-                        <button onclick="sendChatMessage()" class="btn-chat">Send</button>
+
+                <div class="chat-panel">
+                    <h3>Chat</h3>
+                    <div id="chatLog" class="chat-log"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chatInput" placeholder="Message..." maxlength="200">
+                        <button onclick="sendChat()">Send</button>
                     </div>
                 </div>
-                
-                <div class="game-log-panel">
-                    <h3>Game Log</h3>
-                    <div class="game-log" id="gameLog">
-                        <div class="log-entry">Welcome to El Triunfo!</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+            </aside>
+        </main>
+
+        <!-- Player Hand Area -->
+        <footer id="handArea" class="hand-area">
+            <div class="phase-info" id="phaseInfo">Waiting for host...</div>
+            <div class="hand-container" id="handContainer"></div>
+        </footer>
     </div>
 
-    <!-- Load game as regular script (not module) -->
     <script src="js/game.js"></script>
 </body>
 </html>

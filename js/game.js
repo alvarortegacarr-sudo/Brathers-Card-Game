@@ -1,95 +1,97 @@
 // ==========================================
-// EL TRIUNFO - COMPLETE SINGLE FILE VERSION
+// BRA - CLEAN REBUILD
 // ==========================================
 
-// Use global supabaseClient from window.supabase.js - DO NOT redeclare
+const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
+const ATTR_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
+const CARDS_PER_PLAYER = { 2: 20, 3: 13, 4: 10, 5: 8 };
 
-// State
+// Game State
 const state = {
     playerId: localStorage.getItem('playerId') || crypto.randomUUID(),
-    currentPlayer: localStorage.getItem('currentPlayer'),
+    playerName: localStorage.getItem('currentPlayer'),
+    roomCode: localStorage.getItem('currentRoom'),
+    isHost: localStorage.getItem('isHost') === 'true',
+    mySeat: parseInt(localStorage.getItem('seatNumber')) || 1,
+    
     roomId: null,
-    players: [],
-    myHand: [],
-    isGameActive: false,
-    currentPhase: 'waiting',
-    myPosition: 0,
-    triunfoCard: null,
+    players: [],          // { id, name, seat_number, bid, rounds_won, total_score }
+    phase: 'waiting',     // waiting, dealing, triunfo, bidding, playing, scoring
+    cardsPerPlayer: 0,
+    totalRounds: 0,
+    
+    myHand: [],           // Cards in hand
+    triunfoCard: null,    // The 99 card
+    discardedCard: null,  // For 3 players
+    
+    currentRound: 0,      // Which round we're on (1 to totalRounds)
+    currentSeat: 0,       // Whose turn it is (seat number)
+    starterSeat: 0,       // Who starts this round (selects attribute)
     currentAttribute: null,
-    hasBidded: false,
     hasPlayedThisRound: false,
-    cardsPerPlayer: 0
+    hasBid: false,
+    
+    allCards: [],         // Cache of the 40 cards from DB
+    playsThisRound: []    // Cards played this round
 };
 
+// Initialize player ID
 if (!localStorage.getItem('playerId')) {
     localStorage.setItem('playerId', state.playerId);
 }
-
-const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
-const ATTRIBUTE_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
-const CARD_DISTRIBUTION = { 2: 20, 3: 13, 4: 10, 5: 8 };
 
 // ==========================================
 // INITIALIZATION
 // ==========================================
 
 document.addEventListener('DOMContentLoaded', async () => {
-    const roomCode = localStorage.getItem('currentRoom');
-    if (!roomCode) {
-        alert('No room code');
+    if (!state.roomCode) {
         window.location.href = 'index.html';
         return;
     }
 
-    document.getElementById('displayCode').textContent = `ROOM: ${roomCode}`;
+    document.getElementById('roomCode').textContent = `ROOM: ${state.roomCode}`;
     
-    const startBtn = document.getElementById('startBtn');
-    if (startBtn) {
-        startBtn.addEventListener('click', startGame);
-    }
-
+    // Enter key for chat
     document.getElementById('chatInput')?.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendChatMessage();
+        if (e.key === 'Enter') sendChat();
     });
 
     try {
-        const { data: room, error } = await supabaseClient
+        // Get room and players
+        const { data: room, error: roomError } = await supabaseClient
             .from('rooms')
-            .select('*, players(*), turn_order(*)')
-            .eq('code', roomCode)
+            .select('*, players(*)')
+            .eq('code', state.roomCode)
             .single();
 
-        if (error || !room) {
+        if (roomError || !room) {
             alert('Room not found');
             window.location.href = 'index.html';
             return;
         }
 
         state.roomId = room.id;
-        state.players = room.players || [];
-        state.currentPhase = room.status === 'playing' ? room.phase : 'waiting';
-        state.isGameActive = room.status === 'playing';
-        state.triunfoCard = room.triunfo;
-        state.currentAttribute = room.current_attribute;
-
-        updateCardsPerPlayer();
-        updatePlayerList(room.players);
+        state.players = room.players.sort((a, b) => a.seat_number - b.seat_number);
+        state.phase = room.status === 'playing' ? (room.phase || 'dealing') : 'waiting';
+        
+        updatePlayerCount();
+        updateSeatDisplay();
         updateHostControls();
 
+        // Setup realtime subscriptions
         setupRealtime();
 
+        // If game already in progress, load state
         if (room.status === 'playing') {
-            await loadMyHand();
-            await loadMyPosition();
-            renderHand();
+            await loadGameState(room);
         }
 
-        addLog('Connected to El Triunfo');
-        addChatMessage('System', '🎴 Welcome!');
-
+        addChat('System', 'Welcome to Bra! 🎴');
+        
     } catch (err) {
         console.error('Init error:', err);
-        alert('Failed to initialize: ' + err.message);
+        alert('Failed to initialize game');
     }
 });
 
@@ -98,133 +100,235 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ==========================================
 
 async function startGame() {
-    console.log('=== START GAME ===');
-    
     if (state.players.length < 2) {
-        alert('Need at least 2 players!');
+        alert('Need at least 2 players');
         return;
     }
 
-    document.getElementById('hostControls').style.display = 'none';
+    state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length];
+    state.totalRounds = state.cardsPerPlayer;
 
     try {
+        // Clear previous game data
         await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
-        await supabaseClient.from('turn_order').delete().eq('room_id', state.roomId);
-
+        
+        // Reset players
         for (const p of state.players) {
             await supabaseClient
                 .from('players')
-                .update({ predicted_rounds: null, won_rounds: 0, has_bid: false })
+                .update({ 
+                    bid: null, 
+                    rounds_won: 0,
+                    has_bid: false 
+                })
                 .eq('id', p.id);
         }
 
-        const shuffled = [...state.players].sort(() => Math.random() - 0.5);
-        for (let i = 0; i < shuffled.length; i++) {
-            await supabaseClient
-                .from('turn_order')
-                .insert({ room_id: state.roomId, player_id: shuffled[i].id, position: i });
+        // Fetch and shuffle cards
+        const { data: allCards } = await supabaseClient.from('cards').select('*');
+        state.allCards = allCards;
+        
+        const shuffled = [...allCards].sort(() => Math.random() - 0.5);
+        
+        // Pick triunfo
+        const triunfoIndex = Math.floor(Math.random() * shuffled.length);
+        const triunfo = shuffled[triunfoIndex];
+        state.triunfoCard = triunfo;
+        
+        // Remove triunfo from deck for dealing
+        const deck = shuffled.filter((_, i) => i !== triunfoIndex);
+        
+        // Handle 3-player discard
+        let discarded = null;
+        if (state.players.length === 3) {
+            discarded = deck.pop(); // Remove last card
+            state.discardedCard = discarded;
         }
 
-        const { data: allCards } = await supabaseClient.from('cards').select('*');
-        const triunfo = allCards[Math.floor(Math.random() * allCards.length)];
-        
-        const shuffledCards = [...allCards].sort(() => Math.random() - 0.5);
-        updateCardsPerPlayer();
-        
-        console.log('Dealing', state.cardsPerPlayer, 'cards to', state.players.length, 'players');
-        
-        let cardIdx = 0;
+        // Deal cards
+        let cardIndex = 0;
         for (const player of state.players) {
-            const playerCards = shuffledCards.slice(cardIdx, cardIdx + state.cardsPerPlayer);
-            cardIdx += state.cardsPerPlayer;
-            
-            console.log('Dealing to', player.name, ':', playerCards.length, 'cards');
+            const playerCards = deck.slice(cardIndex, cardIndex + state.cardsPerPlayer);
+            cardIndex += state.cardsPerPlayer;
             
             for (const card of playerCards) {
-                await supabaseClient
-                    .from('player_hands')
-                    .insert({
-                        room_id: state.roomId,
-                        player_id: player.id,
-                        card_id: card.id,
-                        played: false
-                    });
+                await supabaseClient.from('player_hands').insert({
+                    room_id: state.roomId,
+                    player_id: player.id,
+                    card_id: card.id,
+                    played: false
+                });
             }
         }
 
+        // Update room to playing status
         await supabaseClient
             .from('rooms')
             .update({
                 status: 'playing',
                 phase: 'triunfo',
                 triunfo_card_id: triunfo.id,
-                current_turn: 0,
-                game_data: { round_starter: 0 }
+                discarded_card_id: discarded?.id || null,
+                current_round: 0,
+                starter_seat: 1,  // Host starts
+                current_seat: 0,
+                current_attribute: null
             })
             .eq('id', state.roomId);
 
-        addChatMessage('System', `🎴 Game started! El Triunfo is ${triunfo.name}`);
-
-        setTimeout(async () => {
-            await supabaseClient
-                .from('rooms')
-                .update({ phase: 'bidding' })
-                .eq('id', state.roomId);
-        }, 2000);
+        addChat('System', `🎴 El Triunfo is ${triunfo.name}!`);
+        if (discarded) {
+            addChat('System', `🗑️ Discarded: ${discarded.name}`);
+        }
 
     } catch (err) {
         console.error('Start game error:', err);
-        alert('Failed to start: ' + err.message);
-        document.getElementById('hostControls').style.display = 'block';
+        alert('Failed to start game');
     }
+}
+
+// ==========================================
+// PHASE HANDLERS
+// ==========================================
+
+function enterPhase(phase) {
+    state.phase = phase;
+    
+    switch(phase) {
+        case 'triunfo':
+            showTriunfo();
+            setTimeout(() => {
+                supabaseClient
+                    .from('rooms')
+                    .update({ phase: 'bidding', current_seat: 1 })
+                    .eq('id', state.roomId);
+            }, 3000);
+            break;
+            
+        case 'bidding':
+            renderBidding();
+            break;
+            
+        case 'playing':
+            state.currentRound = 1;
+            state.starterSeat = 1;
+            state.currentSeat = 1;
+            state.hasBid = false;
+            loadMyHand().then(() => {
+                renderHand();
+                updateTurnIndicator();
+            });
+            break;
+            
+        case 'scoring':
+            calculateScores();
+            break;
+    }
+    
+    updatePhaseInfo();
+}
+
+function showTriunfo() {
+    const triunfoDiv = document.getElementById('triunfo');
+    triunfoDiv.querySelector('.card-name').textContent = state.triunfoCard.name;
+    triunfoDiv.classList.remove('hidden');
+    
+    if (state.discardedCard) {
+        const discardDiv = document.getElementById('discarded');
+        discardDiv.querySelector('.card-name').textContent = state.discardedCard.name;
+        discardDiv.classList.remove('hidden');
+    }
+    
+    updatePhaseInfo('El Triunfo revealed!');
 }
 
 // ==========================================
 // BIDDING
 // ==========================================
 
-async function submitBid(bid) {
-    console.log('Submit bid:', bid);
+function renderBidding() {
+    const container = document.getElementById('handContainer');
+    const isMyTurn = state.currentSeat === state.mySeat;
+    const myPlayer = state.players.find(p => p.id === state.playerId);
     
-    if (state.currentPhase !== 'bidding' || state.hasBidded) return;
+    if (myPlayer?.has_bid) {
+        container.innerHTML = `
+            <div class="waiting-message">
+                <h3>Bid placed: ${myPlayer.bid}</h3>
+                <p>Waiting for others...</p>
+            </div>
+        `;
+        return;
+    }
+    
+    if (!isMyTurn) {
+        const currentPlayer = state.players.find(p => p.seat_number === state.currentSeat);
+        container.innerHTML = `
+            <div class="waiting-message">
+                <p>Waiting for ${currentPlayer?.name || 'player'} to bid...</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Calculate restriction for last bidder
+    const bidsPlaced = state.players
+        .filter(p => p.has_bid && p.seat_number !== state.mySeat)
+        .reduce((sum, p) => sum + (p.bid || 0), 0);
+    
+    const isLastBidder = state.currentSeat === Math.max(...state.players.map(p => p.seat_number));
+    const maxBid = state.totalRounds;
+    
+    let html = `
+        <div class="bidding-panel">
+            <h3>How many rounds will you win?</h3>
+            <div class="bid-buttons">
+    `;
+    
+    for (let i = 0; i <= maxBid; i++) {
+        const isRestricted = isLastBidder && (bidsPlaced + i === maxBid);
+        html += `
+            <button class="bid-btn" onclick="placeBid(${i})" ${isRestricted ? 'disabled' : ''}>
+                ${i}
+            </button>
+        `;
+    }
+    
+    html += '</div></div>';
+    container.innerHTML = html;
+}
 
-    state.hasBidded = true;
-    renderHand();
-
+async function placeBid(bid) {
     try {
         await supabaseClient
             .from('players')
-            .update({ predicted_rounds: bid, has_bid: true })
+            .update({ bid: bid, has_bid: true })
             .eq('id', state.playerId);
-
-        addChatMessage('System', `You bid ${bid}`);
-
-        checkAllBidded();
-
+        
+        state.hasBid = true;
+        
+        // Move to next seat or start playing
+        const maxSeat = Math.max(...state.players.map(p => p.seat_number));
+        const nextSeat = state.currentSeat >= maxSeat ? 0 : state.currentSeat + 1;
+        
+        if (nextSeat === 0) {
+            // All bid, start playing
+            await supabaseClient
+                .from('rooms')
+                .update({ phase: 'playing', current_seat: 1 })
+                .eq('id', state.roomId);
+        } else {
+            await supabaseClient
+                .from('rooms')
+                .update({ current_seat: nextSeat })
+                .eq('id', state.roomId);
+        }
+        
+        addChat('System', `${state.playerName} bid ${bid}`);
+        
     } catch (err) {
         console.error('Bid error:', err);
-        state.hasBidded = false;
-        renderHand();
-    }
-}
-
-async function checkAllBidded() {
-    const { data: players } = await supabaseClient
-        .from('players')
-        .select('*')
-        .eq('room_id', state.roomId);
-
-    const allBid = players.every(p => p.has_bid);
-    console.log('Bidding:', players.filter(p => p.has_bid).length, '/', players.length);
-
-    if (allBid) {
-        await supabaseClient
-            .from('rooms')
-            .update({ phase: 'playing', current_turn: 1 })
-            .eq('id', state.roomId);
-    } else {
-        setTimeout(checkAllBidded, 1000);
     }
 }
 
@@ -232,579 +336,572 @@ async function checkAllBidded() {
 // PLAYING
 // ==========================================
 
-async function selectAttribute(attr) {
-    console.log('Select attribute:', attr);
-    
-    if (state.currentPhase !== 'playing') return;
-    
-    const gameData = state.currentRoom?.game_data || {};
-    const roundStarter = gameData.round_starter ?? 0;
-    
-    console.log('Round starter:', roundStarter, 'My position:', state.myPosition);
-    
-    if (state.myPosition !== roundStarter) {
-        alert('Only the round starter can select attribute!');
-        return;
-    }
-    
-    if (state.currentAttribute) {
-        alert('Attribute already selected!');
-        return;
-    }
-
-    try {
-        state.currentAttribute = attr;
-        await supabaseClient
-            .from('rooms')
-            .update({ current_attribute: attr })
-            .eq('id', state.roomId);
-        
-        addChatMessage('System', `${ATTRIBUTE_NAMES[attr]} selected!`);
-        renderHand();
-    } catch (err) {
-        console.error(err);
-        state.currentAttribute = null;
-    }
-}
-
-async function playCard(cardId) {
-    console.log('Play card:', cardId);
-    
-    if (state.currentPhase !== 'playing') return;
-    
-    if (state.hasPlayedThisRound) {
-        alert('You already played this round!');
-        return;
-    }
-
-    const card = state.myHand.find(c => c.id === cardId);
-    if (!card) {
-        alert('Card not found!');
-        return;
-    }
-
-    try {
-        const { data: plays } = await supabaseClient
-            .from('current_turn_plays')
-            .select('*')
-            .eq('room_id', state.roomId);
-
-        const playsThisRound = plays?.length || 0;
-        
-        const gameData = state.currentRoom?.game_data || {};
-        const roundStarter = gameData.round_starter ?? 0;
-        
-        let expectedPos;
-        if (playsThisRound === 0) {
-            expectedPos = roundStarter;
-        } else {
-            expectedPos = (roundStarter + playsThisRound) % state.players.length;
-        }
-
-        console.log('Expected:', expectedPos, 'Me:', state.myPosition);
-
-        if (state.myPosition !== expectedPos) {
-            alert('Not your turn!');
-            return;
-        }
-
-        if (playsThisRound === 0 && !state.currentAttribute) {
-            alert('Select attribute first!');
-            return;
-        }
-
-        let value = card[state.currentAttribute];
-        if (state.triunfoCard && card.id === state.triunfoCard.id) {
-            value = 99;
-        }
-
-        await supabaseClient.from('current_turn_plays').insert({
-            room_id: state.roomId,
-            player_id: state.playerId,
-            card_id: cardId,
-            attribute: state.currentAttribute,
-            value: value
-        });
-
-        await supabaseClient
-            .from('player_hands')
-            .update({ played: true })
-            .eq('room_id', state.roomId)
-            .eq('player_id', state.playerId)
-            .eq('card_id', cardId);
-
-        state.hasPlayedThisRound = true;
-        state.myHand = state.myHand.filter(c => c.id !== cardId);
-        
-        renderHand();
-        addChatMessage('System', `Played ${card.name} (${value})`);
-
-        if (playsThisRound + 1 >= state.players.length) {
-            setTimeout(resolveRound, 1500);
-        }
-
-    } catch (err) {
-        console.error('Play error:', err);
-        state.hasPlayedThisRound = false;
-    }
-}
-
-async function resolveRound() {
-    try {
-        const { data: plays } = await supabaseClient
-            .from('current_turn_plays')
-            .select('*, players(*), cards(*)')
-            .eq('room_id', state.roomId);
-
-        const winner = plays.reduce((max, p) => {
-            if (p.value > max.value) return p;
-            if (p.value === max.value) {
-                const pTotal = ATTRIBUTES.reduce((s, a) => s + p.cards[a], 0);
-                const mTotal = ATTRIBUTES.reduce((s, a) => s + max.cards[a], 0);
-                if (pTotal > mTotal) return p;
-            }
-            return max;
-        });
-
-        await supabaseClient
-            .from('players')
-            .update({ won_rounds: winner.players.won_rounds + 1 })
-            .eq('id', winner.player_id);
-
-        addChatMessage('System', `🏆 ${winner.players.name} wins!`);
-
-        await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
-
-        state.hasPlayedThisRound = false;
-        state.currentAttribute = null;
-
-        const { data: remaining } = await supabaseClient
-            .from('player_hands')
-            .select('*')
-            .eq('room_id', state.roomId);
-
-        const cardsLeft = remaining.filter(h => !h.played).length;
-        
-        if (cardsLeft === 0) {
-            await endSet();
-        } else {
-            const { data: turnOrder } = await supabaseClient
-                .from('turn_order')
-                .select('*')
-                .eq('room_id', state.roomId);
-
-            const winnerPos = turnOrder.find(t => t.player_id === winner.player_id)?.position || 0;
-            const nextTurn = (state.currentRoom.current_turn || 0) + 1;
-
-            await supabaseClient
-                .from('rooms')
-                .update({
-                    current_turn: nextTurn,
-                    current_attribute: null,
-                    game_data: { round_starter: winnerPos }
-                })
-                .eq('id', state.roomId);
-        }
-
-    } catch (err) {
-        console.error('Resolve error:', err);
-    }
-}
-
-async function endSet() {
-    state.currentPhase = 'scoring';
-    renderHand();
-
-    const { data: players } = await supabaseClient
-        .from('players')
-        .select('*')
-        .eq('room_id', state.roomId);
-
-    for (const p of players) {
-        const predicted = p.predicted_rounds || 0;
-        const won = p.won_rounds || 0;
-        let points = won * 2;
-        points += (predicted === won) ? 3 : -2;
-        
-        await supabaseClient
-            .from('players')
-            .update({ total_score: (p.total_score || 0) + points })
-            .eq('id', p.id);
-    }
-
-    addChatMessage('System', '📊 Set complete!');
-
-    state.isGameActive = false;
-    state.hasBidded = false;
-    state.hasPlayedThisRound = false;
-    state.myHand = [];
-    
-    await supabaseClient
-        .from('rooms')
-        .update({ status: 'waiting', phase: 'waiting' })
-        .eq('id', state.roomId);
-
-    updateHostControls();
-}
-
-// ==========================================
-// HAND LOADING
-// ==========================================
-
 async function loadMyHand() {
-    console.log('=== LOAD HAND ===');
-    console.log('Player:', state.playerId);
-    console.log('Room:', state.roomId);
-
     try {
-        const { data, error } = await supabaseClient
+        const { data: handData } = await supabaseClient
             .from('player_hands')
             .select('*, cards(*)')
             .eq('room_id', state.roomId)
-            .eq('player_id', state.playerId);
-
-        if (error) {
-            console.error('Hand fetch error:', error);
-            return;
-        }
-
-        console.log('Raw hand records:', data?.length || 0);
-
-        const unplayed = (data || []).filter(h => {
-            const played = h.played === true || h.played === 1;
-            return !played;
-        });
-
-        console.log('Unplayed cards:', unplayed.length);
-
-        state.myHand = unplayed.map(h => ({
+            .eq('player_id', state.playerId)
+            .eq('played', false);
+        
+        state.myHand = handData.map(h => ({
             ...h.cards,
-            hand_record_id: h.id
+            handId: h.id
         }));
-
-        console.log('Hand loaded:', state.myHand.map(c => c.name));
-
+        
     } catch (err) {
         console.error('Load hand error:', err);
     }
 }
 
-async function loadMyPosition() {
-    const { data } = await supabaseClient
-        .from('turn_order')
-        .select('*')
-        .eq('room_id', state.roomId)
-        .eq('player_id', state.playerId)
-        .single();
+function renderHand() {
+    const container = document.getElementById('handContainer');
     
-    state.myPosition = data?.position || 0;
-    console.log('My position:', state.myPosition);
+    if (state.phase !== 'playing') return;
+    
+    const isStarter = state.starterSeat === state.mySeat;
+    const isMyTurn = state.currentSeat === state.mySeat;
+    
+    let html = '';
+    
+    // Attribute selection (only for starter at beginning of round)
+    if (isStarter && !state.currentAttribute && isMyTurn) {
+        html += `
+            <div class="attribute-panel">
+                <h3>Select Attribute</h3>
+                <div class="attribute-buttons">
+                    ${ATTRIBUTES.map(attr => `
+                        <button class="attr-btn ${attr}" onclick="selectAttribute('${attr}')">
+                            ${ATTR_NAMES[attr]}
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    } else if (!state.currentAttribute) {
+        const starter = state.players.find(p => p.seat_number === state.starterSeat);
+        html += `
+            <div class="waiting-message">
+                <p>Waiting for ${starter?.name} to select attribute...</p>
+            </div>
+        `;
+    } else {
+        // Show current attribute
+        html += `
+            <div style="text-align: center; margin-bottom: 1rem;">
+                <span style="color: var(--highlight); font-size: 1.2rem; font-weight: bold;">
+                    Playing: ${ATTR_NAMES[state.currentAttribute]}
+                </span>
+                ${!isMyTurn ? '<p>Waiting for your turn...</p>' : '<p>Double-click card to play</p>'}
+            </div>
+        `;
+    }
+    
+    // Cards
+    html += '<div style="display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;">';
+    
+    state.myHand.forEach(card => {
+        const isTriunfo = card.id === state.triunfoCard.id;
+        const canPlay = isMyTurn && state.currentAttribute && !state.hasPlayedThisRound;
+        
+        html += `
+            <div class="card ${isTriunfo ? 'triunfo' : ''}" 
+                 ${canPlay ? `ondblclick="playCard(${card.id})"` : ''}
+                 style="${!canPlay ? 'opacity: 0.6;' : ''}">
+                <div class="card-name">${card.name}</div>
+                <div class="card-stats">
+                    ${ATTRIBUTES.map(attr => `
+                        <div class="stat ${state.currentAttribute === attr ? 'active' : ''}">
+                            <span class="stat-label">${ATTR_NAMES[attr]}</span>
+                            <span class="stat-value">${isTriunfo ? 99 : card[attr]}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+async function selectAttribute(attr) {
+    try {
+        await supabaseClient
+            .from('rooms')
+            .update({ current_attribute: attr })
+            .eq('id', state.roomId);
+        
+        state.currentAttribute = attr;
+        renderHand();
+        addChat('System', `${state.playerName} selected ${ATTR_NAMES[attr]}`);
+        
+    } catch (err) {
+        console.error('Select attribute error:', err);
+    }
+}
+
+async function playCard(cardId) {
+    if (!state.currentAttribute || state.hasPlayedThisRound) return;
+    
+    const card = state.myHand.find(c => c.id === cardId);
+    if (!card) return;
+    
+    // Calculate value (99 if triunfo)
+    const isTriunfo = card.id === state.triunfoCard.id;
+    const value = isTriunfo ? 99 : card[state.currentAttribute];
+    
+    try {
+        // Record play
+        await supabaseClient.from('current_turn_plays').insert({
+            room_id: state.roomId,
+            player_id: state.playerId,
+            card_id: cardId,
+            attribute: state.currentAttribute,
+            value: value,
+            seat_number: state.mySeat
+        });
+        
+        // Mark card as played
+        await supabaseClient
+            .from('player_hands')
+            .update({ played: true })
+            .eq('id', card.handId);
+        
+        // Remove from local hand
+        state.myHand = state.myHand.filter(c => c.id !== cardId);
+        state.hasPlayedThisRound = true;
+        
+        addChat('System', `${state.playerName} played ${card.name} (${value})`);
+        
+        // Check if round complete
+        const { data: plays } = await supabaseClient
+            .from('current_turn_plays')
+            .select('*')
+            .eq('room_id', state.roomId);
+        
+        if (plays.length >= state.players.length) {
+            setTimeout(resolveRound, 1500);
+        } else {
+            // Advance to next seat
+            const nextSeat = (state.currentSeat % state.players.length) + 1;
+            await supabaseClient
+                .from('rooms')
+                .update({ current_seat: nextSeat })
+                .eq('id', state.roomId);
+        }
+        
+        renderHand();
+        
+    } catch (err) {
+        console.error('Play card error:', err);
+    }
 }
 
 // ==========================================
-// REALTIME
+// ROUND RESOLUTION
+// ==========================================
+
+async function resolveRound() {
+    try {
+        const { data: plays } = await supabaseClient
+            .from('current_turn_plays')
+            .select('*, cards(*)')
+            .eq('room_id', state.roomId);
+        
+        // Find winner (highest value, tiebreaker: highest total stats)
+        const winner = plays.reduce((best, play) => {
+            if (play.value > best.value) return play;
+            if (play.value === best.value) {
+                const playTotal = ATTRIBUTES.reduce((sum, attr) => sum + play.cards[attr], 0);
+                const bestTotal = ATTRIBUTES.reduce((sum, attr) => sum + best.cards[attr], 0);
+                if (playTotal > bestTotal) return play;
+            }
+            return best;
+        });
+        
+        const winnerPlayer = state.players.find(p => p.id === winner.player_id);
+        
+        // Update winner's rounds_won
+        await supabaseClient
+            .from('players')
+            .update({ rounds_won: (winnerPlayer.rounds_won || 0) + 1 })
+            .eq('id', winner.player_id);
+        
+        addChat('System', `🏆 ${winnerPlayer.name} wins the round!`);
+        
+        // Clear plays
+        await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
+        
+        // Check if game over (all cards played)
+        const { data: remaining } = await supabaseClient
+            .from('player_hands')
+            .select('*')
+            .eq('room_id', state.roomId)
+            .eq('played', false);
+        
+        if (remaining.length === 0) {
+            // Game over
+            await supabaseClient
+                .from('rooms')
+                .update({ phase: 'scoring' })
+                .eq('id', state.roomId);
+        } else {
+            // Next round
+            const nextRound = state.currentRound + 1;
+            await supabaseClient
+                .from('rooms')
+                .update({
+                    current_round: nextRound,
+                    starter_seat: winnerPlayer.seat_number,
+                    current_seat: winnerPlayer.seat_number,
+                    current_attribute: null
+                })
+                .eq('id', state.roomId);
+            
+            state.hasPlayedThisRound = false;
+            await loadMyHand();
+            renderHand();
+        }
+        
+    } catch (err) {
+        console.error('Resolve round error:', err);
+    }
+}
+
+// ==========================================
+// SCORING
+// ==========================================
+
+async function calculateScores() {
+    const players = state.players;
+    let scoreHtml = '<div class="score-results">';
+    
+    for (const p of players) {
+        const bid = p.bid || 0;
+        const won = p.rounds_won || 0;
+        const correct = bid === won;
+        
+        let points = (won * 2) + (correct ? 3 : -2);
+        
+        // Update total score
+        const newTotal = (p.total_score || 0) + points;
+        await supabaseClient
+            .from('players')
+            .update({ total_score: newTotal })
+            .eq('id', p.id);
+        
+        scoreHtml += `
+            <div class="score-item" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                <div style="font-weight: bold; margin-bottom: 0.5rem;">${p.name}</div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                    <span>Bid: ${bid} | Won: ${won}</span>
+                    <span style="color: ${correct ? 'var(--success)' : 'var(--highlight)'}">
+                        ${correct ? '✓ Exact!' : '✗ Miss'} 
+                    </span>
+                </div>
+                <div style="margin-top: 0.5rem; font-size: 1.1rem;">
+                    ${won}×2 ${correct ? '+3' : '-2'} = <strong>${points} points</strong>
+                </div>
+            </div>
+        `;
+    }
+    
+    scoreHtml += '</div>';
+    
+    document.getElementById('handContainer').innerHTML = `
+        <div style="text-align: center; padding: 2rem;">
+            <h2>Game Over!</h2>
+            ${scoreHtml}
+            ${state.isHost ? '<button onclick="resetGame()" class="start-btn" style="margin-top: 2rem;">Play Again</button>' : ''}
+        </div>
+    `;
+    
+    updateScoreboard();
+}
+
+async function resetGame() {
+    await supabaseClient
+        .from('rooms')
+        .update({ status: 'waiting', phase: 'waiting' })
+        .eq('id', state.roomId);
+}
+
+// ==========================================
+// REALTIME SYNC
 // ==========================================
 
 function setupRealtime() {
+    // Room changes
     supabaseClient
-        .channel(`room:${state.roomId}`)
-        .on('postgres_changes',
+        .channel(`room-${state.roomId}`)
+        .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Room:', payload.old.phase, '->', payload.new.phase);
+                const room = payload.new;
                 
-                state.currentRoom = payload.new;
-                state.currentPhase = payload.new.phase;
-                state.currentAttribute = payload.new.current_attribute;
-                
-                if (payload.new.status === 'playing') {
-                    state.isGameActive = true;
-                }
-
-                if (payload.old.phase === 'triunfo' && payload.new.phase === 'bidding') {
-                    console.log('ENTERING BIDDING - loading hand');
-                    await loadMyHand();
-                }
-                
-                if (payload.old.phase === 'bidding' && payload.new.phase === 'playing') {
-                    console.log('ENTERING PLAYING - loading hand and position');
-                    state.hasBidded = false;
-                    state.hasPlayedThisRound = false;
-                    await loadMyHand();
-                    await loadMyPosition();
-                }
-
-                if (payload.new.phase === 'playing' && payload.old.phase === 'playing') {
-                    if (payload.new.current_turn !== payload.old.current_turn) {
-                        state.hasPlayedThisRound = false;
-                        state.currentAttribute = payload.new.current_attribute;
-                        await loadMyHand();
+                // Phase transitions
+                if (payload.old.phase !== room.phase) {
+                    if (room.phase === 'triunfo') {
+                        // Load triunfo info
+                        const { data: card } = await supabaseClient
+                            .from('cards')
+                            .select('*')
+                            .eq('id', room.triunfo_card_id)
+                            .single();
+                        state.triunfoCard = card;
+                        
+                        if (room.discarded_card_id) {
+                            const { data: discard } = await supabaseClient
+                                .from('cards')
+                                .select('*')
+                                .eq('id', room.discarded_card_id)
+                                .single();
+                            state.discardedCard = discard;
+                        }
                     }
+                    
+                    enterPhase(room.phase);
                 }
-
-                renderHand();
-                updateGameUI();
-                updateHostControls();
+                
+                // Update game state
+                state.currentRound = room.current_round || 0;
+                state.starterSeat = room.starter_seat || 1;
+                state.currentSeat = room.current_seat || 0;
+                state.currentAttribute = room.current_attribute;
+                
+                // Refresh UI
+                updateTurnIndicator();
+                highlightActiveSeat();
+                
+                if (room.phase === 'playing') {
+                    renderHand();
+                    loadTablePlays();
+                }
+            }
+        )
+        .subscribe();
+    
+    // Player changes (bids, scores)
+    supabaseClient
+        .channel(`players-${state.roomId}`)
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${state.roomId}` },
+            async (payload) => {
+                // Refresh players
+                const { data: players } = await supabaseClient
+                    .from('players')
+                    .select('*')
+                    .eq('room_id', state.roomId)
+                    .order('seat_number');
+                
+                state.players = players;
+                updateSeatDisplay();
+                updateScoreboard();
+                
+                if (state.phase === 'bidding') {
+                    renderBidding();
+                }
+            }
+        )
+        .subscribe();
+    
+    // Plays (cards on table)
+    supabaseClient
+        .channel(`plays-${state.roomId}`)
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
+            () => {
+                loadTablePlays();
             }
         )
         .subscribe();
 }
 
-// ==========================================
-// UI RENDERING
-// ==========================================
-
-function renderHand() {
-    const container = document.getElementById('handContainer');
-    if (!container) return;
-
-    container.innerHTML = '';
-
-    if (state.currentPhase === 'waiting') {
-        container.innerHTML = '<div class="waiting-message">Waiting for host...</div>';
+async function loadTablePlays() {
+    const { data: plays } = await supabaseClient
+        .from('current_turn_plays')
+        .select('*, players(name), cards(*)')
+        .eq('room_id', state.roomId);
+    
+    const container = document.getElementById('playsContainer');
+    if (!plays || plays.length === 0) {
+        container.innerHTML = '';
         return;
     }
+    
+    container.innerHTML = plays.map(play => `
+        <div class="played-card">
+            <div class="player">${play.players.name}</div>
+            <div style="font-size: 0.8rem; margin-bottom: 0.25rem;">${play.cards.name}</div>
+            <div class="value">${play.value}</div>
+        </div>
+    `).join('');
+}
 
-    if (state.currentPhase === 'triunfo') {
-        container.innerHTML = `
-            <div style="text-align:center;padding:20px;">
-                <h2 style="color:#ffd700;">👑 EL TRIUNFO 👑</h2>
-                <div style="width:160px;margin:0 auto;padding:12px;background:linear-gradient(135deg,#1a2332,#2d3748);border:3px solid #ffd700;border-radius:12px;">
-                    <div style="color:#ffd700;font-weight:bold;">${state.triunfoCard?.name}</div>
-                    <div style="font-size:2rem;">👑</div>
-                </div>
-                <p style="color:#a0aec0;">Bidding starts soon...</p>
-            </div>
-        `;
-        return;
+async function loadGameState(room) {
+    // Load triunfo
+    if (room.triunfo_card_id) {
+        const { data: card } = await supabaseClient
+            .from('cards')
+            .select('*')
+            .eq('id', room.triunfo_card_id)
+            .single();
+        state.triunfoCard = card;
     }
-
-    if (state.currentPhase === 'bidding') {
-        if (!state.hasBidded) {
-            const cards = state.myHand;
-            let html = `
-                <div style="text-align:center;margin-bottom:20px;">
-                    <h3 style="color:#ffd700;">Your Cards (${cards.length})</h3>
-                    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:20px;">
-            `;
-            
-            cards.forEach(card => {
-                html += `
-                    <div style="width:90px;background:rgba(26,35,50,0.9);border:1px solid #4a5568;border-radius:8px;padding:6px;text-align:center;font-size:0.75rem;">
-                        <div style="color:#ffd700;font-weight:bold;">${card.name}</div>
-                        <div style="color:#a0aec0;font-size:0.65rem;">
-                            C:${card.car} U:${card.cul} T:${card.tet}<br>F:${card.fis} P:${card.per}
-                        </div>
-                    </div>
-                `;
-            });
-            
-            html += `
-                    </div>
-                </div>
-                <div style="text-align:center;padding:30px;background:rgba(20,27,36,0.95);border-radius:16px;border:3px solid #ffd700;">
-                    <h2 style="color:#ffd700;">How many rounds will you win?</h2>
-                    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;">
-                        ${Array.from({length: cards.length + 1}, (_, i) => `
-                            <button onclick="submitBid(${i})" style="width:60px;height:60px;font-size:1.4rem;font-weight:bold;background:linear-gradient(135deg,#667eea,#764ba2);border:none;border-radius:12px;color:white;cursor:pointer;">${i}</button>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-            container.innerHTML = html;
-        } else {
-            container.innerHTML = `
-                <div style="text-align:center;padding:40px;">
-                    <h2 style="color:#48bb78;">Bid placed!</h2>
-                    <p style="color:#a0aec0;">Waiting for others...</p>
-                </div>
-            `;
-        }
-        return;
+    
+    // Load discarded
+    if (room.discarded_card_id) {
+        const { data: card } = await supabaseClient
+            .from('cards')
+            .select('*')
+            .eq('id', room.discarded_card_id)
+            .single();
+        state.discardedCard = card;
     }
-
-    if (state.currentPhase === 'playing') {
-        const gameData = state.currentRoom?.game_data || {};
-        const roundStarter = gameData.round_starter ?? 0;
-        const isStarter = state.myPosition === roundStarter;
-        const canSelect = isStarter && !state.currentAttribute;
-
-        if (canSelect) {
-            container.innerHTML += `
-                <div style="text-align:center;padding:20px;background:rgba(20,27,36,0.95);border:2px solid #4299e1;border-radius:16px;margin-bottom:20px;">
-                    <h3 style="color:#ffd700;">You start! Select attribute:</h3>
-                    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
-                        ${ATTRIBUTES.map(attr => {
-                            const colors = {car:'#ef4444',cul:'#8b5cf6',tet:'#10b981',fis:'#3b82f6',per:'#f59e0b'};
-                            return `<button onclick="selectAttribute('${attr}')" style="padding:12px 24px;font-size:1.1rem;font-weight:bold;border:none;border-radius:8px;cursor:pointer;background:${colors[attr]};color:white;">${ATTRIBUTE_NAMES[attr]}</button>`;
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        } else if (!state.currentAttribute) {
-            container.innerHTML += `
-                <div style="text-align:center;padding:15px;background:rgba(255,255,255,0.05);border-radius:10px;margin-bottom:15px;">
-                    <p style="color:#a0aec0;">Waiting for round starter to select attribute...</p>
-                </div>
-            `;
-        }
-
-        if (state.currentAttribute) {
-            container.innerHTML += `
-                <div style="text-align:center;padding:15px;background:rgba(255,215,0,0.1);border:2px solid #ffd700;border-radius:10px;margin-bottom:15px;">
-                    <div style="font-size:1.3rem;color:#ffd700;font-weight:bold;">Playing: ${ATTRIBUTE_NAMES[state.currentAttribute]}</div>
-                    ${state.hasPlayedThisRound ? 
-                        '<p style="color:#48bb78;">You played this round. Waiting for others...</p>' :
-                        '<p style="color:#a0aec0;">Double-click card to play</p>'
-                    }
-                </div>
-            `;
-        }
-
-        let cardsHtml = '<div style="display:flex;flex-wrap:wrap;gap:15px;justify-content:center;">';
-        
-        state.myHand.forEach(card => {
-            const isTriunfo = state.triunfoCard?.id === card.id;
-            
-            let statsHtml;
-            if (state.currentAttribute) {
-                const val = isTriunfo ? 99 : card[state.currentAttribute];
-                statsHtml = `
-                    <div style="text-align:center;padding:20px 10px;">
-                        <div style="font-size:2.5rem;color:#ffd700;font-weight:bold;">${val}</div>
-                        <div style="color:#a0aec0;font-size:0.9rem;">${ATTRIBUTE_NAMES[state.currentAttribute]}</div>
-                    </div>
-                `;
-            } else {
-                statsHtml = `
-                    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;">
-                        ${ATTRIBUTES.map(attr => `
-                            <div style="background:rgba(255,255,255,0.05);border-radius:6px;padding:6px 2px;text-align:center;">
-                                <span style="display:block;font-size:0.6rem;color:#a0aec0;">${ATTRIBUTE_NAMES[attr]}</span>
-                                <span style="display:block;font-size:0.9rem;font-weight:bold;color:${isTriunfo?'#ffd700':'#48bb78'};">${isTriunfo?99:card[attr]}</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
-            
-            const canPlay = state.currentAttribute && !state.hasPlayedThisRound;
-            
-            cardsHtml += `
-                <div 
-                    style="width:140px;${canPlay?'cursor:pointer;':'opacity:0.6;'}transition:transform 0.2s;background:linear-gradient(135deg,#1e293b,#334155);border:2px solid #475569;border-radius:12px;padding:12px;color:white;"
-                    ${canPlay ? `ondblclick="playCard(${card.id})" onmouseenter="this.style.transform='scale(1.05)'" onmouseleave="this.style.transform='scale(1)'"` : ''}
-                >
-                    <div style="font-weight:bold;font-size:0.9rem;text-align:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);color:#ffd700;">
-                        ${card.name} ${isTriunfo?'👑':''}
-                    </div>
-                    ${statsHtml}
-                </div>
-            `;
-        });
-        
-        cardsHtml += '</div>';
-        container.innerHTML += cardsHtml;
-        return;
-    }
-
-    if (state.currentPhase === 'scoring') {
-        container.innerHTML = '<div style="text-align:center;"><h3>Set Complete!</h3><p>Calculating scores...</p></div>';
+    
+    state.currentRound = room.current_round || 0;
+    state.starterSeat = room.starter_seat || 1;
+    state.currentSeat = room.current_seat || 0;
+    state.currentAttribute = room.current_attribute;
+    
+    if (room.phase === 'playing') {
+        await loadMyHand();
+        loadTablePlays();
     }
 }
 
-function updateGameUI() {
-    const phaseIndicator = document.getElementById('phaseIndicator');
-    if (!phaseIndicator) return;
+// ==========================================
+// UI UPDATES
+// ==========================================
 
-    const gameData = state.currentRoom?.game_data || {};
-    const roundStarter = gameData.round_starter ?? 0;
-
-    switch(state.currentPhase) {
-        case 'waiting':
-            phaseIndicator.textContent = 'Waiting for host...';
-            phaseIndicator.style.color = '#ecc94b';
-            break;
-        case 'triunfo':
-            phaseIndicator.textContent = 'El Triunfo revealed!';
-            phaseIndicator.style.color = '#ff6b6b';
-            break;
-        case 'bidding':
-            phaseIndicator.textContent = state.hasBidded ? 'Bid placed!' : 'Place your bid!';
-            phaseIndicator.style.color = state.hasBidded ? '#48bb78' : '#ffd700';
-            break;
-        case 'playing':
-            if (state.currentAttribute) {
-                phaseIndicator.textContent = `${ATTRIBUTE_NAMES[state.currentAttribute]} | Round ${state.currentRoom?.current_turn || 1}`;
-                phaseIndicator.style.color = '#48bb78';
+function updateSeatDisplay() {
+    state.players.forEach(p => {
+        const seatEl = document.getElementById(`seat-${p.seat_number}`);
+        if (seatEl) {
+            seatEl.querySelector('.seat-name').textContent = p.name;
+            const bidEl = seatEl.querySelector('.seat-bid');
+            if (p.has_bid) {
+                bidEl.textContent = `Bid: ${p.bid}`;
+                bidEl.classList.add('placed');
             } else {
-                const isStarter = state.myPosition === roundStarter;
-                phaseIndicator.textContent = isStarter ? 'You select attribute!' : 'Waiting for attribute...';
-                phaseIndicator.style.color = isStarter ? '#ffd700' : '#ecc94b';
+                bidEl.textContent = state.phase === 'bidding' ? 'Bidding...' : '-';
+                bidEl.classList.remove('placed');
             }
-            break;
-        case 'scoring':
-            phaseIndicator.textContent = 'Set Complete!';
-            phaseIndicator.style.color = '#4299e1';
-            break;
+        }
+    });
+    
+    // Mark empty seats
+    for (let i = 1; i <= 5; i++) {
+        const hasPlayer = state.players.some(p => p.seat_number === i);
+        if (!hasPlayer) {
+            const seatEl = document.getElementById(`seat-${i}`);
+            if (seatEl) {
+                seatEl.querySelector('.seat-name').textContent = 'Empty';
+                seatEl.querySelector('.seat-bid').textContent = '-';
+            }
+        }
     }
+    
+    updatePlayerList();
+    highlightActiveSeat();
+}
 
-    document.getElementById('turnInfo').textContent = 
-        state.currentPhase === 'playing' ? `Round ${state.currentRoom?.current_turn || 1}` : 
-        state.currentPhase.charAt(0).toUpperCase() + state.currentPhase.slice(1);
+function highlightActiveSeat() {
+    document.querySelectorAll('.seat').forEach(el => el.classList.remove('active'));
+    if (state.currentSeat > 0) {
+        const seatEl = document.getElementById(`seat-${state.currentSeat}`);
+        if (seatEl) seatEl.classList.add('active');
+    }
+}
+
+function updateTurnIndicator() {
+    const indicator = document.getElementById('turn-indicator');
+    
+    if (state.phase === 'waiting') {
+        indicator.textContent = 'Waiting for host...';
+    } else if (state.phase === 'triunfo') {
+        indicator.textContent = 'El Triunfo revealed!';
+    } else if (state.phase === 'bidding') {
+        const current = state.players.find(p => p.seat_number === state.currentSeat);
+        indicator.textContent = current ? `${current.name} is bidding...` : 'Bidding...';
+    } else if (state.phase === 'playing') {
+        if (state.currentAttribute) {
+            const current = state.players.find(p => p.seat_number === state.currentSeat);
+            indicator.textContent = `Round ${state.currentRound} - ${ATTR_NAMES[state.currentAttribute]} - ${current?.name}'s turn`;
+        } else {
+            const starter = state.players.find(p => p.seat_number === state.starterSeat);
+            indicator.textContent = `${starter?.name} selects attribute...`;
+        }
+    }
+}
+
+function updatePhaseInfo(msg) {
+    const el = document.getElementById('phaseInfo');
+    if (msg) {
+        el.textContent = msg;
+    } else {
+        const phases = {
+            waiting: 'Waiting for host...',
+            triunfo: 'El Triunfo revealed!',
+            bidding: 'Place your bids!',
+            playing: 'Play your cards!',
+            scoring: 'Calculating scores...'
+        };
+        el.textContent = phases[state.phase] || '';
+    }
 }
 
 function updateHostControls() {
-    const hostControls = document.getElementById('hostControls');
-    if (!hostControls) return;
-
-    const isHost = localStorage.getItem('isHost') === 'true';
-
-    if (state.isGameActive || state.currentRoom?.status === 'playing') {
-        hostControls.style.display = 'none';
-        return;
-    }
-
-    if (isHost) {
-        hostControls.style.display = 'block';
+    const controls = document.getElementById('hostControls');
+    if (state.isHost && state.phase === 'waiting') {
+        controls.classList.remove('hidden');
+        const minPlayers = controls.querySelector('.min-players');
+        minPlayers.textContent = state.players.length < 2 
+            ? `Need ${2 - state.players.length} more player(s)` 
+            : 'Ready to start!';
     } else {
-        hostControls.style.display = 'none';
+        controls.classList.add('hidden');
     }
 }
 
-function updatePlayerList(players) {
-    const ul = document.getElementById('playersUl');
-    if (!ul) return;
-    
-    ul.innerHTML = '';
-    players.forEach(p => {
-        const li = document.createElement('li');
-        li.style.cssText = 'padding:0.6rem;margin-bottom:0.4rem;background:rgba(255,255,255,0.03);border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
-        
-        let badges = '';
-        if (p.id === state.currentRoom?.host_id) badges += '👑 ';
-        if (p.id === state.playerId) badges += 'YOU ';
-        if (p.has_bid) badges += '✓';
-        
-        li.innerHTML = `<span>${p.name}</span><span>${badges}</span>`;
-        ul.appendChild(li);
-    });
-
-    document.getElementById('playerCount').textContent = players.length;
+function updatePlayerCount() {
+    document.getElementById('playerCount')?.textContent 
+        ? document.getElementById('playerCount').textContent = state.players.length 
+        : null;
 }
 
-function updateCardsPerPlayer() {
-    state.cardsPerPlayer = CARD_DISTRIBUTION[state.players.length] || 8;
+function updatePlayerList() {
+    const list = document.getElementById('playerList');
+    list.innerHTML = state.players.map(p => `
+        <li>
+            <span>${p.name} ${p.seat_number === state.mySeat ? '(You)' : ''} ${p.id === state.playerId && state.isHost ? '👑' : ''}</span>
+            <span style="color: var(--text-dim);">#${p.seat_number}</span>
+        </li>
+    `).join('');
+}
+
+function updateScoreboard() {
+    const list = document.getElementById('scoreList');
+    if (!list) return;
+    
+    const sorted = [...state.players].sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
+    
+    list.innerHTML = sorted.map(p => `
+        <div class="score-item">
+            <span class="name">${p.name}</span>
+            <span class="points">${p.total_score || 0}</span>
+        </div>
+    `).join('');
 }
 
 // ==========================================
 // CHAT & UTILS
 // ==========================================
 
-async function sendChatMessage() {
+async function sendChat() {
     const input = document.getElementById('chatInput');
-    if (!input) return;
-    
     const msg = input.value.trim();
     if (!msg) return;
     
@@ -813,44 +910,59 @@ async function sendChatMessage() {
     await supabaseClient.from('chat_messages').insert({
         room_id: state.roomId,
         player_id: state.playerId,
-        player_name: state.currentPlayer,
+        player_name: state.playerName,
         message: msg
     });
 }
 
-function addChatMessage(sender, message) {
-    const chatLog = document.getElementById('chatLog');
-    if (!chatLog) return;
-    
+function addChat(sender, message) {
+    const log = document.getElementById('chatLog');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isSystem = sender === 'System';
+    
     const div = document.createElement('div');
-    div.style.cssText = 'padding:0.4rem;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:0.3rem;font-size:0.85rem;';
-    div.innerHTML = `<span style="color:#a0aec0;font-size:0.75rem;">[${time}]</span> <b style="color:${sender==='System'?'#ffd700':'#4299e1'}">${sender}:</b> ${message}`;
-    chatLog.appendChild(div);
-    chatLog.scrollTop = chatLog.scrollHeight;
-}
-
-function addLog(msg) {
-    const log = document.getElementById('gameLog');
-    if (!log) return;
-    const div = document.createElement('div');
-    div.style.cssText = 'padding:0.4rem;border-left:3px solid #4299e1;padding-left:0.6rem;color:#a0aec0;font-size:0.85rem;';
-    div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    div.className = `chat-message ${isSystem ? 'system' : ''}`;
+    div.innerHTML = `
+        <span class="time">[${time}]</span>
+        <span class="sender">${sender}:</span>
+        <span>${message}</span>
+    `;
+    
     log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
 }
 
 function copyCode() {
-    navigator.clipboard.writeText(localStorage.getItem('currentRoom'));
-    addChatMessage('System', 'Code copied!');
+    navigator.clipboard.writeText(state.roomCode);
+    addChat('System', 'Room code copied!');
 }
 
 async function leaveGame() {
     await supabaseClient.from('players').delete().eq('id', state.playerId);
     localStorage.removeItem('currentRoom');
+    localStorage.removeItem('currentPlayer');
+    localStorage.removeItem('isHost');
+    localStorage.removeItem('seatNumber');
     window.location.href = 'index.html';
 }
 
-// Cleanup
+// Chat subscription
+supabaseClient
+    .channel(`chat-${state.roomCode}`)
+    .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${state.roomId}` },
+        (payload) => {
+            const msg = payload.new;
+            if (msg.player_id !== state.playerId) {
+                addChat(msg.player_name, msg.message);
+            }
+        }
+    )
+    .subscribe();
+
+// Cleanup on unload
 window.addEventListener('beforeunload', async () => {
-    await supabaseClient.from('players').delete().eq('id', state.playerId);
+    if (state.phase === 'waiting') {
+        await supabaseClient.from('players').delete().eq('id', state.playerId);
+    }
 });
