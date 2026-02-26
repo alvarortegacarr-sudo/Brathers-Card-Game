@@ -804,22 +804,23 @@ function setupRealtime() {
                 }
                 
                 // Handle phase change
-                if (oldRoom.phase !== room.phase) {
-                    console.log('Phase change detected:', oldRoom.phase, '->', room.phase);
-                    
-                    if (room.phase === 'triunfo' && room.triunfo_card_id) {
-                        const { data: card } = await supabaseClient
-                            .from('cards')
-                            .select('*')
-                            .eq('id', room.triunfo_card_id)
-                            .single();
-                        state.triunfoCard = card;
-                    }
-                    
-                    // Initialize new phase
-                    initPhase(room.phase);
-                    return;
-                }
+// Handle phase change
+if (state.phase !== room.phase) {
+    console.log('Phase change detected:', state.phase, '->', room.phase);
+    
+    if (room.phase === 'triunfo' && room.triunfo_card_id) {
+        const { data: card } = await supabaseClient
+            .from('cards')
+            .select('*')
+            .eq('id', room.triunfo_card_id)
+            .single();
+        state.triunfoCard = card;
+    }
+    
+    // Initialize new phase
+    initPhase(room.phase);
+    return;
+}
                 
                 // Same phase - just update UI
 if (room.current_set !== oldRoom.current_set) {
