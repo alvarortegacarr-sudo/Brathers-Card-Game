@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - COMPLETE FIXED VERSION
+// BRA - DEBUGGED VERSION
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -71,7 +71,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.players = room.players.sort((a, b) => a.seat_number - b.seat_number);
         state.phase = room.status === 'playing' ? (room.phase || 'waiting') : 'waiting';
         
-        // Calculate cards per player based on player count
         state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
         state.totalRounds = state.cardsPerPlayer;
         
@@ -133,12 +132,10 @@ async function startGame() {
         
         const shuffled = [...allCards].sort(() => Math.random() - 0.5);
         
-        // Pick triunfo from ALL cards (it will be dealt to someone)
         const triunfoIndex = Math.floor(Math.random() * shuffled.length);
         const triunfo = shuffled[triunfoIndex];
         state.triunfoCard = triunfo;
         
-        // Handle 3-player: remove one random card as discard (not triunfo)
         let discarded = null;
         if (state.players.length === 3) {
             const availableForDiscard = shuffled.filter((_, i) => i !== triunfoIndex);
@@ -150,7 +147,6 @@ async function startGame() {
             shuffled.splice(discardGlobalIndex, 1);
         }
 
-        // Deal cards (triunfo is among these!)
         let cardIndex = 0;
         for (const player of state.players) {
             const playerCards = shuffled.slice(cardIndex, cardIndex + state.cardsPerPlayer);
@@ -230,10 +226,11 @@ function enterPhase(phase, startTimer = true) {
             state.roundStarter = 1;
             state.currentTurn = 1;
             state.hasPlayedThisRound = false;
+            // CRITICAL: Load plays immediately when entering playing phase
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
-                loadTablePlays();
+                loadTablePlays(); // Load immediately
             });
             break;
             
@@ -262,7 +259,7 @@ function showTriunfo() {
 }
 
 // ==========================================
-// BIDDING (FIXED - proper calculation)
+// BIDDING
 // ==========================================
 
 function renderBidding() {
@@ -271,13 +268,11 @@ function renderBidding() {
     const myPlayer = state.players.find(p => p.id === state.playerId);
     const hasBid = myPlayer?.predicted_rounds !== null && myPlayer?.predicted_rounds !== undefined;
     
-    // FIXED: Always calculate from CARDS_PER_PLAYER to ensure it's correct
     const calculatedCardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
     const maxBid = calculatedCardsPerPlayer;
     
     let html = '';
     
-    // Show cards first
     html += '<div style="margin-bottom: 2rem;"><h3 style="text-align: center; margin-bottom: 1rem; color: var(--highlight);">Your Cards</h3><div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.5rem;">';
     
     state.myHand.forEach(card => {
@@ -299,7 +294,6 @@ function renderBidding() {
     
     html += '</div></div>';
     
-    // Bidding UI
     if (hasBid) {
         html += `
             <div class="waiting-message" style="padding: 2rem;">
@@ -315,11 +309,9 @@ function renderBidding() {
             </div>
         `;
     } else {
-        // FIXED: Properly identify last bidder and calculate restriction
         const maxSeat = Math.max(...state.players.map(p => p.seat_number));
         const isLastBidder = state.currentTurn === maxSeat;
         
-        // Get bids from players with lower seat numbers (already bid)
         const previousBidders = state.players.filter(p => 
             p.seat_number < state.mySeat && 
             p.predicted_rounds !== null && 
@@ -328,8 +320,6 @@ function renderBidding() {
         
         const sumPreviousBids = previousBidders.reduce((sum, p) => sum + (p.predicted_rounds || 0), 0);
         
-        console.log('Bid calculation:', { isLastBidder, sumPreviousBids, maxBid, mySeat: state.mySeat });
-        
         html += `
             <div class="bidding-panel" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 12px;">
                 <h3 style="margin-bottom: 1rem;">How many rounds will you win?</h3>
@@ -337,14 +327,12 @@ function renderBidding() {
         `;
         
         for (let i = 0; i <= maxBid; i++) {
-            // FIXED: Only block if this bid would make total equal maxBid
             const totalWouldBe = sumPreviousBids + i;
             const wouldEqualTotal = isLastBidder && (totalWouldBe === maxBid);
             const isDisabled = wouldEqualTotal;
             
             html += `
                 <button class="bid-btn" onclick="placeBid(${i})" ${isDisabled ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''} 
-                    title="${isDisabled ? 'Sum of all bids cannot equal ' + maxBid : ''}"
                     style="width: 50px; height: 50px; border-radius: 50%; font-size: 1.2rem; font-weight: bold; background: ${isDisabled ? 'var(--text-dim)' : 'var(--accent)'}; color: white; border: none; cursor: pointer;">
                     ${i}
                 </button>
@@ -545,13 +533,13 @@ async function playCard(cardId) {
         
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        // FIXED: Use select instead of count to avoid null error
-        const { data: plays, error: countError } = await supabaseClient
+        // CRITICAL: Immediately update table display after playing
+        await loadTablePlays();
+        
+        const { data: plays } = await supabaseClient
             .from('current_turn_plays')
             .select('id')
             .eq('room_id', state.roomId);
-        
-        if (countError) throw countError;
         
         const count = plays?.length || 0;
         console.log('Plays this round:', count, 'Players:', state.players.length);
@@ -561,7 +549,6 @@ async function playCard(cardId) {
             setTimeout(resolveRound, 1500);
         } else {
             const nextTurn = (state.currentTurn % state.players.length) + 1;
-            console.log('Advancing to next turn:', nextTurn);
             await supabaseClient
                 .from('rooms')
                 .update({ current_turn: nextTurn })
@@ -587,14 +574,11 @@ async function resolveRound() {
         
         if (playsError) throw playsError;
         
-        console.log('Plays to resolve:', plays);
-        
         if (!plays || plays.length === 0) {
             console.error('No plays found!');
             return;
         }
         
-        // Find winner
         const winner = plays.reduce((best, play) => {
             if (play.value > best.value) return play;
             if (play.value === best.value) {
@@ -605,8 +589,6 @@ async function resolveRound() {
             return best;
         });
         
-        console.log('Winner:', winner);
-        
         const winnerPlayer = state.players.find(p => p.id === winner.player_id);
         
         await supabaseClient
@@ -616,33 +598,31 @@ async function resolveRound() {
         
         addChat('System', `🏆 ${winnerPlayer.name} wins the round with ${winner.cards.name} (${winner.value})!`);
         
-        // Clear plays
+        // Clear plays from DB
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
+        
+        // Clear table display immediately
+        const container = document.getElementById('playsContainer');
+        if (container) {
+            container.innerHTML = '<p class="no-cards">Round complete! Starting next...</p>';
+        }
         
         state.hasPlayedThisRound = false;
         state.currentAttribute = null;
         
-        // Check if game over
-        const { data: remaining, error: remainingError } = await supabaseClient
+        const { data: remaining } = await supabaseClient
             .from('player_hands')
             .select('*')
             .eq('room_id', state.roomId)
             .eq('played', false);
         
-        if (remainingError) throw remainingError;
-        
-        console.log('Cards remaining:', remaining.length);
-        
         if (remaining.length === 0) {
-            console.log('Game over - no cards left');
             await supabaseClient
                 .from('rooms')
                 .update({ phase: 'scoring' })
                 .eq('id', state.roomId);
         } else {
             const nextSet = state.currentSet + 1;
-            console.log('Next set:', nextSet, 'Starter:', winnerPlayer.seat_number);
-            
             await supabaseClient
                 .from('rooms')
                 .update({
@@ -659,7 +639,6 @@ async function resolveRound() {
         
     } catch (err) {
         console.error('Resolve round error:', err);
-        alert('Error resolving round: ' + err.message);
     }
 }
 
@@ -738,15 +717,19 @@ async function resetGame() {
 }
 
 // ==========================================
-// REALTIME & UI (FIXED - show played cards prominently)
+// REALTIME & UI (CRITICAL FIXES HERE)
 // ==========================================
 
 function setupRealtime() {
-    supabaseClient
+    console.log('Setting up realtime subscriptions...');
+    
+    // Room changes
+    const roomChannel = supabaseClient
         .channel(`room-${state.roomId}`)
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${state.roomId}` },
             async (payload) => {
+                console.log('Room update received:', payload);
                 const room = payload.new;
                 
                 if (payload.old.phase !== room.phase) {
@@ -769,7 +752,6 @@ function setupRealtime() {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
-                // Recalculate if players changed
                 state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
                 state.totalRounds = state.cardsPerPlayer;
                 
@@ -782,11 +764,16 @@ function setupRealtime() {
                         await loadMyHand();
                     }
                     renderHand();
+                    // CRITICAL: Reload plays when room updates
+                    loadTablePlays();
                 }
             }
         )
-        .subscribe();
+        .subscribe((status) => {
+            console.log('Room channel status:', status);
+        });
     
+    // Player changes
     supabaseClient
         .channel(`players-${state.roomId}`)
         .on('postgres_changes',
@@ -799,8 +786,6 @@ function setupRealtime() {
                     .order('seat_number');
                 
                 state.players = players;
-                
-                // Recalculate when players update
                 state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
                 state.totalRounds = state.cardsPerPlayer;
                 
@@ -814,59 +799,92 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // CRITICAL: Listen for plays to update the table display in real-time
+    // CRITICAL: Plays subscription - this updates the table for ALL players
+    console.log('Setting up plays channel...');
     supabaseClient
         .channel(`plays-${state.roomId}`)
         .on('postgres_changes',
-            { event: '*', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-            () => {
-                console.log('Plays updated, refreshing table...');
+            { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
+            (payload) => {
+                console.log('NEW PLAY RECEIVED:', payload);
+                // Force immediate update when ANY player plays a card
                 loadTablePlays();
             }
         )
-        .subscribe();
+        .on('postgres_changes',
+            { event: 'DELETE', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
+            () => {
+                console.log('Plays deleted (round ended)');
+                const container = document.getElementById('playsContainer');
+                if (container) {
+                    container.innerHTML = '<p class="no-cards">New round starting...</p>';
+                }
+            }
+        )
+        .subscribe((status) => {
+            console.log('Plays channel status:', status);
+        });
 }
 
+// CRITICAL FIXED FUNCTION - Force render plays
 async function loadTablePlays() {
-    const { data: plays, error } = await supabaseClient
-        .from('current_turn_plays')
-        .select('*, players(name, seat_number), cards(*)')
-        .eq('room_id', state.roomId)
-        .order('created_at', { ascending: true });
+    console.log('loadTablePlays called');
     
-    if (error) {
-        console.error('Load table plays error:', error);
-        return;
-    }
-    
-    console.log('Loaded plays for table:', plays);
-    
-    // Update the center plays display
     const container = document.getElementById('playsContainer');
     if (!container) {
-        console.error('playsContainer not found!');
+        console.error('CRITICAL: playsContainer not found in DOM!');
         return;
     }
     
-    if (!plays?.length) {
-        container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
-        return;
-    }
-    
-    // Show cards in play order with animation
-    container.innerHTML = plays.map((play, index) => {
-        const isTriunfo = play.cards.id === state.triunfoCard?.id;
-        const isStarter = play.seat_number === state.roundStarter;
+    try {
+        const { data: plays, error } = await supabaseClient
+            .from('current_turn_plays')
+            .select('*, players(name, seat_number), cards(*)')
+            .eq('room_id', state.roomId)
+            .order('created_at', { ascending: true });
         
-        return `
-        <div class="played-card ${isStarter ? 'starter' : ''}" style="animation-delay: ${index * 0.15}s">
-            <div class="player-name">${play.players.name}</div>
-            <div class="card-name">${play.cards.name}</div>
-            <div class="value">${play.value}</div>
-            <div class="attribute">${ATTR_NAMES[play.attribute]}</div>
-            ${isTriunfo ? '<div class="triunfo-icon">👑</div>' : ''}
-        </div>
-    `}).join('');
+        if (error) {
+            console.error('Error fetching plays:', error);
+            return;
+        }
+        
+        console.log('Fetched plays:', plays?.length || 0, plays);
+        
+        if (!plays || plays.length === 0) {
+            container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
+            return;
+        }
+        
+        // Force render with inline styles to ensure visibility
+        container.innerHTML = plays.map((play, index) => {
+            const isTriunfo = play.cards.id === state.triunfoCard?.id;
+            const isStarter = play.seat_number === state.roundStarter;
+            
+            return `
+            <div style="
+                background: linear-gradient(135deg, #2d3748, #1a202c);
+                padding: 12px;
+                border-radius: 12px;
+                min-width: 110px;
+                text-align: center;
+                border: 3px solid ${isStarter ? '#ecc94b' : '#0f3460'};
+                box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+                animation: slideIn 0.4s ease ${index * 0.15}s both;
+                position: relative;
+            ">
+                <div style="font-size: 11px; color: #a0a0a0; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">${play.players.name}</div>
+                <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #eaeaea;">${play.cards.name}</div>
+                <div style="font-size: 28px; font-weight: bold; color: #e94560; margin: 8px 0; text-shadow: 0 0 10px rgba(233, 69, 96, 0.4);">${play.value}</div>
+                <div style="font-size: 11px; color: #a0a0a0; background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
+                ${isTriunfo ? '<div style="position: absolute; top: -8px; right: -8px; background: #ecc94b; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);">👑</div>' : ''}
+            </div>
+        `}).join('');
+        
+        console.log('Rendered plays to container');
+        
+    } catch (err) {
+        console.error('Error in loadTablePlays:', err);
+    }
 }
 
 async function loadGameState(room) {
@@ -887,12 +905,12 @@ async function loadGameState(room) {
         state.roundStarter = room.game_data.round_starter;
     }
     
-    // Ensure calculations are correct
     state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
     state.totalRounds = state.cardsPerPlayer;
     
     if (room.phase === 'playing') {
         await loadMyHand();
+        // Load plays immediately
         loadTablePlays();
     }
 }
