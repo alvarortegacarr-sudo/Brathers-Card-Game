@@ -771,8 +771,10 @@ function setupRealtime() {
             async (payload) => {
                 console.log('Room update:', payload);
                 const room = payload.new;
-                const oldRoom = payload.old;
                 
+                const prevSet = state.currentSet;
+                const prevPhase = state.phase;
+
                 // Update state values first
                 state.currentSet = room.current_set || 0;
                 state.currentTurn = room.current_turn || 0;
@@ -782,33 +784,31 @@ function setupRealtime() {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
-                // Handle phase change
-// Handle phase change
-if (state.phase !== room.phase) {
-    console.log('Phase change detected:', state.phase, '->', room.phase);
-    
-    if (room.phase === 'triunfo' && room.triunfo_card_id) {
-        const { data: card } = await supabaseClient
-            .from('cards')
-            .select('*')
-            .eq('id', room.triunfo_card_id)
-            .single();
-        state.triunfoCard = card;
-    }
-    
-    // Initialize new phase
-    initPhase(room.phase);
-    return;
-}
+                // Handle phase change - compare against LOCAL state, not oldRoom
+                if (prevPhase !== room.phase) {
+                    console.log('Phase change detected:', prevPhase, '->', room.phase);
+                    
+                    if (room.phase === 'triunfo' && room.triunfo_card_id) {
+                        const { data: card } = await supabaseClient
+                            .from('cards')
+                            .select('*')
+                            .eq('id', room.triunfo_card_id)
+                            .single();
+                        state.triunfoCard = card;
+                    }
+                    
+                    initPhase(room.phase);
+                    return;
+                }
                 
-                // Same phase - just update UI
-if (room.current_set !== oldRoom.current_set) {
-    state.hasPlayedThisRound = false;
-    state.isResolvingRound = false;
-    await new Promise(r => setTimeout(r, 3000));
-    state.cachedPlays = [];
-    await loadMyHand();
-}
+                // Handle set change - compare against LOCAL state, not oldRoom
+                if (prevSet !== state.currentSet && prevSet !== 0) {
+                    console.log('Set changed:', prevSet, '->', state.currentSet);
+                    state.hasPlayedThisRound = false;
+                    state.isResolvingRound = false;
+                    state.cachedPlays = [];
+                    await loadMyHand();
+                }
                 
                 updatePhaseUI();
             }
@@ -840,34 +840,35 @@ if (room.current_set !== oldRoom.current_set) {
         )
         .subscribe();
     
-supabaseClient
-    .channel(`plays-${state.roomId}`)
-    .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-        async (payload) => {
-            const play = payload.new;
+    supabaseClient
+        .channel(`plays-${state.roomId}`)
+        .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
+            async (payload) => {
+                const play = payload.new;
 
-            if (state.cachedPlays.some(p => p.id === play.id)) return;
+                // Deduplicate by card_id + player_id instead of id
+                if (state.cachedPlays.some(p => p.player_id === play.player_id)) return;
 
-            const { data: fullPlay } = await supabaseClient
-                .from('current_turn_plays')
-                .select('*, players(name, seat_number), cards(*)')
-                .eq('id', play.id)
-                .single();
+                const { data: fullPlay } = await supabaseClient
+                    .from('current_turn_plays')
+                    .select('*, players(name, seat_number), cards(*)')
+                    .eq('id', play.id)
+                    .single();
 
-            if (fullPlay) {
-                state.cachedPlays.push(fullPlay);
-                renderTableCards();
+                if (fullPlay) {
+                    state.cachedPlays.push(fullPlay);
+                    renderTableCards();
+                    console.log('Plays so far:', state.cachedPlays.length, '/', state.players.length);
+                }
+
+                if (state.cachedPlays.length >= state.players.length && state.isHost && !state.isResolvingRound) {
+                    state.isResolvingRound = true;
+                    setTimeout(() => resolveRound(), 2000);
+                }
             }
-
-            if (state.cachedPlays.length >= state.players.length && state.isHost && !state.isResolvingRound) {
-                state.isResolvingRound = true;
-                setTimeout(() => resolveRound(), 2000);
-            }
-        }
-    )
-    .subscribe();
-    
+        )
+        .subscribe();
 }
 
 async function loadGameState(room) {
