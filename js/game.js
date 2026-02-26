@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - DEBUGGED VERSION
+// BRA - FINAL FIXED VERSION
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -31,7 +31,8 @@ const state = {
     hasPlayedThisRound: false,
     
     allCards: [],
-    playsThisRound: []
+    // Cache plays locally to avoid fetch errors
+    cachedPlays: []
 };
 
 if (!localStorage.getItem('playerId')) {
@@ -119,6 +120,9 @@ async function startGame() {
     try {
         await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
+        
+        // Reset cached plays
+        state.cachedPlays = [];
         
         for (const p of state.players) {
             await supabaseClient
@@ -226,11 +230,11 @@ function enterPhase(phase, startTimer = true) {
             state.roundStarter = 1;
             state.currentTurn = 1;
             state.hasPlayedThisRound = false;
-            // CRITICAL: Load plays immediately when entering playing phase
+            state.cachedPlays = []; // Clear cached plays for new round
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
-                loadTablePlays(); // Load immediately
+                renderTableCards(); // Render empty table
             });
             break;
             
@@ -309,7 +313,8 @@ function renderBidding() {
             </div>
         `;
     } else {
-        const maxSeat = Math.max(...state.players.map(p => p.seat_number));
+        const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
+        const maxSeat = Math.max(...sortedSeats);
         const isLastBidder = state.currentTurn === maxSeat;
         
         const previousBidders = state.players.filter(p => 
@@ -361,13 +366,19 @@ async function placeBid(bid) {
         
         addChat('System', `${state.playerName} bid ${bid}`);
         
-        const maxSeat = Math.max(...state.players.map(p => p.seat_number));
-        const nextTurn = state.currentTurn >= maxSeat ? 0 : state.currentTurn + 1;
+        // Get next seat in order
+        const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
+        const currentIdx = sortedSeats.indexOf(state.currentTurn);
+        const nextIdx = (currentIdx + 1) % sortedSeats.length;
+        const nextTurn = sortedSeats[nextIdx];
         
-        if (nextTurn === 0) {
+        // Check if we've cycled through all players
+        const isLastBidder = nextTurn === sortedSeats[0] && currentIdx === sortedSeats.length - 1;
+        
+        if (isLastBidder) {
             await supabaseClient
                 .from('rooms')
-                .update({ phase: 'playing', current_turn: 1, current_set: 1 })
+                .update({ phase: 'playing', current_turn: sortedSeats[0], current_set: 1 })
                 .eq('id', state.roomId);
         } else {
             await supabaseClient
@@ -511,18 +522,29 @@ async function playCard(cardId) {
     const isTriunfo = card.id === state.triunfoCard?.id;
     const value = isTriunfo ? 99 : card[state.currentAttribute];
     
-    console.log('Playing card:', card.name, 'value:', value);
+    console.log('Playing card:', card.name, 'value:', value, 'seat:', state.mySeat);
     
     try {
-        await supabaseClient.from('current_turn_plays').insert({
-            room_id: state.roomId,
-            player_id: state.playerId,
-            card_id: cardId,
-            attribute: state.currentAttribute,
-            value: value,
-            seat_number: state.mySeat
-        });
+        // Insert play into DB
+        const { data: insertedPlay, error: insertError } = await supabaseClient
+            .from('current_turn_plays')
+            .insert({
+                room_id: state.roomId,
+                player_id: state.playerId,
+                card_id: cardId,
+                attribute: state.currentAttribute,
+                value: value,
+                seat_number: state.mySeat
+            })
+            .select()
+            .single();
         
+        if (insertError) {
+            console.error('Insert play error:', insertError);
+            throw insertError;
+        }
+        
+        // Update local hand
         await supabaseClient
             .from('player_hands')
             .update({ played: true })
@@ -531,24 +553,37 @@ async function playCard(cardId) {
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         state.hasPlayedThisRound = true;
         
+        // CRITICAL: Add to cached plays immediately for display
+        const playData = {
+            id: insertedPlay.id,
+            player_id: state.playerId,
+            card_id: cardId,
+            attribute: state.currentAttribute,
+            value: value,
+            seat_number: state.mySeat,
+            players: { name: state.playerName, seat_number: state.mySeat },
+            cards: { ...card, id: cardId }
+        };
+        state.cachedPlays.push(playData);
+        
+        // Update display immediately
+        renderTableCards();
+        
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        // CRITICAL: Immediately update table display after playing
-        await loadTablePlays();
-        
-        const { data: plays } = await supabaseClient
-            .from('current_turn_plays')
-            .select('id')
-            .eq('room_id', state.roomId);
-        
-        const count = plays?.length || 0;
-        console.log('Plays this round:', count, 'Players:', state.players.length);
-        
-        if (count >= state.players.length) {
-            console.log('Round complete! Resolving...');
-            setTimeout(resolveRound, 1500);
+        // Check if round complete using cached plays
+        if (state.cachedPlays.length >= state.players.length) {
+            console.log('Round complete with cached plays:', state.cachedPlays.length);
+            setTimeout(() => resolveRound(state.cachedPlays), 1500);
         } else {
-            const nextTurn = (state.currentTurn % state.players.length) + 1;
+            // Advance to next seat using sorted seats
+            const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
+            const currentIdx = sortedSeats.indexOf(state.currentTurn);
+            const nextIdx = (currentIdx + 1) % sortedSeats.length;
+            const nextTurn = sortedSeats[nextIdx];
+            
+            console.log('Advancing turn:', { current: state.currentTurn, next: nextTurn, seats: sortedSeats });
+            
             await supabaseClient
                 .from('rooms')
                 .update({ current_turn: nextTurn })
@@ -564,30 +599,67 @@ async function playCard(cardId) {
     }
 }
 
-async function resolveRound() {
-    console.log('Resolving round...');
+// CRITICAL: Render cards from cache, not DB fetch
+function renderTableCards() {
+    const container = document.getElementById('playsContainer');
+    if (!container) {
+        console.error('playsContainer not found!');
+        return;
+    }
+    
+    console.log('Rendering table cards:', state.cachedPlays.length);
+    
+    if (state.cachedPlays.length === 0) {
+        container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
+        return;
+    }
+    
+    container.innerHTML = state.cachedPlays.map((play, index) => {
+        const isTriunfo = play.cards.id === state.triunfoCard?.id;
+        const isStarter = play.seat_number === state.roundStarter;
+        
+        return `
+        <div style="
+            background: linear-gradient(135deg, #2d3748, #1a202c);
+            padding: 12px;
+            border-radius: 12px;
+            min-width: 110px;
+            text-align: center;
+            border: 3px solid ${isStarter ? '#ecc94b' : '#0f3460'};
+            box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+            animation: slideIn 0.4s ease ${index * 0.15}s both;
+            position: relative;
+        ">
+            <div style="font-size: 11px; color: #a0a0a0; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">${play.players.name}</div>
+            <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #eaeaea;">${play.cards.name}</div>
+            <div style="font-size: 28px; font-weight: bold; color: #e94560; margin: 8px 0; text-shadow: 0 0 10px rgba(233, 69, 96, 0.4);">${play.value}</div>
+            <div style="font-size: 11px; color: #a0a0a0; background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
+            ${isTriunfo ? '<div style="position: absolute; top: -8px; right: -8px; background: #ecc94b; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);">👑</div>' : ''}
+        </div>
+    `}).join('');
+}
+
+async function resolveRound(cachedPlays) {
+    console.log('Resolving round with plays:', cachedPlays);
+    
     try {
-        const { data: plays, error: playsError } = await supabaseClient
-            .from('current_turn_plays')
-            .select('*, players(*), cards(*)')
-            .eq('room_id', state.roomId);
-        
-        if (playsError) throw playsError;
-        
-        if (!plays || plays.length === 0) {
-            console.error('No plays found!');
+        if (!cachedPlays || cachedPlays.length === 0) {
+            console.error('No plays to resolve!');
             return;
         }
         
-        const winner = plays.reduce((best, play) => {
+        // Find winner from cached plays
+        const winner = cachedPlays.reduce((best, play) => {
             if (play.value > best.value) return play;
             if (play.value === best.value) {
-                const playTotal = ATTRIBUTES.reduce((sum, attr) => sum + play.cards[attr], 0);
-                const bestTotal = ATTRIBUTES.reduce((sum, attr) => sum + best.cards[attr], 0);
+                const playTotal = ATTRIBUTES.reduce((sum, attr) => sum + (play.cards[attr] || 0), 0);
+                const bestTotal = ATTRIBUTES.reduce((sum, attr) => sum + (best.cards[attr] || 0), 0);
                 if (playTotal > bestTotal) return play;
             }
             return best;
         });
+        
+        console.log('Winner:', winner);
         
         const winnerPlayer = state.players.find(p => p.id === winner.player_id);
         
@@ -598,18 +670,26 @@ async function resolveRound() {
         
         addChat('System', `🏆 ${winnerPlayer.name} wins the round with ${winner.cards.name} (${winner.value})!`);
         
-        // Clear plays from DB
+        // Clear plays from DB and cache
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
+        state.cachedPlays = [];
         
-        // Clear table display immediately
+        // Show winner highlight briefly
         const container = document.getElementById('playsContainer');
         if (container) {
-            container.innerHTML = '<p class="no-cards">Round complete! Starting next...</p>';
+            container.innerHTML = `
+                <div style="text-align: center; padding: 2rem; animation: fadeIn 0.5s ease;">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
+                    <div style="font-size: 1.5rem; color: var(--success); font-weight: bold;">${winnerPlayer.name} wins!</div>
+                    <div style="font-size: 1rem; color: var(--text-dim); margin-top: 0.5rem;">Next round starting...</div>
+                </div>
+            `;
         }
         
         state.hasPlayedThisRound = false;
         state.currentAttribute = null;
         
+        // Check if game over
         const { data: remaining } = await supabaseClient
             .from('player_hands')
             .select('*')
@@ -623,6 +703,7 @@ async function resolveRound() {
                 .eq('id', state.roomId);
         } else {
             const nextSet = state.currentSet + 1;
+            
             await supabaseClient
                 .from('rooms')
                 .update({
@@ -696,6 +777,7 @@ async function calculateScores() {
 
 async function resetGame() {
     state.gameStarting = false;
+    state.cachedPlays = [];
     const btn = document.getElementById('startBtn');
     if (btn) {
         btn.disabled = false;
@@ -717,19 +799,19 @@ async function resetGame() {
 }
 
 // ==========================================
-// REALTIME & UI (CRITICAL FIXES HERE)
+// REALTIME & UI
 // ==========================================
 
 function setupRealtime() {
-    console.log('Setting up realtime subscriptions...');
+    console.log('Setting up realtime...');
     
     // Room changes
-    const roomChannel = supabaseClient
+    supabaseClient
         .channel(`room-${state.roomId}`)
         .on('postgres_changes', 
             { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Room update received:', payload);
+                console.log('Room update:', payload);
                 const room = payload.new;
                 
                 if (payload.old.phase !== room.phase) {
@@ -752,26 +834,20 @@ function setupRealtime() {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
-                state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
-                state.totalRounds = state.cardsPerPlayer;
-                
                 updateTurnIndicator();
                 highlightActiveSeat();
                 
                 if (room.phase === 'playing') {
                     if (payload.old.current_set !== room.current_set) {
                         state.hasPlayedThisRound = false;
+                        state.cachedPlays = []; // Clear for new round
                         await loadMyHand();
                     }
                     renderHand();
-                    // CRITICAL: Reload plays when room updates
-                    loadTablePlays();
                 }
             }
         )
-        .subscribe((status) => {
-            console.log('Room channel status:', status);
-        });
+        .subscribe();
     
     // Player changes
     supabaseClient
@@ -799,92 +875,38 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // CRITICAL: Plays subscription - this updates the table for ALL players
-    console.log('Setting up plays channel...');
+    // CRITICAL: Listen for other players' plays
     supabaseClient
         .channel(`plays-${state.roomId}`)
         .on('postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-            (payload) => {
-                console.log('NEW PLAY RECEIVED:', payload);
-                // Force immediate update when ANY player plays a card
-                loadTablePlays();
-            }
-        )
-        .on('postgres_changes',
-            { event: 'DELETE', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-            () => {
-                console.log('Plays deleted (round ended)');
-                const container = document.getElementById('playsContainer');
-                if (container) {
-                    container.innerHTML = '<p class="no-cards">New round starting...</p>';
+            async (payload) => {
+                console.log('Other player played:', payload);
+                
+                const play = payload.new;
+                
+                // Don't double-add our own play
+                if (play.player_id === state.playerId) return;
+                
+                // Fetch full play data with joins
+                const { data: fullPlay } = await supabaseClient
+                    .from('current_turn_plays')
+                    .select('*, players(name, seat_number), cards(*)')
+                    .eq('id', play.id)
+                    .single();
+                
+                if (fullPlay) {
+                    state.cachedPlays.push(fullPlay);
+                    renderTableCards();
+                    
+                    // Check if round complete
+                    if (state.cachedPlays.length >= state.players.length) {
+                        setTimeout(() => resolveRound(state.cachedPlays), 1500);
+                    }
                 }
             }
         )
-        .subscribe((status) => {
-            console.log('Plays channel status:', status);
-        });
-}
-
-// CRITICAL FIXED FUNCTION - Force render plays
-async function loadTablePlays() {
-    console.log('loadTablePlays called');
-    
-    const container = document.getElementById('playsContainer');
-    if (!container) {
-        console.error('CRITICAL: playsContainer not found in DOM!');
-        return;
-    }
-    
-    try {
-        const { data: plays, error } = await supabaseClient
-            .from('current_turn_plays')
-            .select('*, players(name, seat_number), cards(*)')
-            .eq('room_id', state.roomId)
-            .order('created_at', { ascending: true });
-        
-        if (error) {
-            console.error('Error fetching plays:', error);
-            return;
-        }
-        
-        console.log('Fetched plays:', plays?.length || 0, plays);
-        
-        if (!plays || plays.length === 0) {
-            container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
-            return;
-        }
-        
-        // Force render with inline styles to ensure visibility
-        container.innerHTML = plays.map((play, index) => {
-            const isTriunfo = play.cards.id === state.triunfoCard?.id;
-            const isStarter = play.seat_number === state.roundStarter;
-            
-            return `
-            <div style="
-                background: linear-gradient(135deg, #2d3748, #1a202c);
-                padding: 12px;
-                border-radius: 12px;
-                min-width: 110px;
-                text-align: center;
-                border: 3px solid ${isStarter ? '#ecc94b' : '#0f3460'};
-                box-shadow: 0 6px 20px rgba(0,0,0,0.5);
-                animation: slideIn 0.4s ease ${index * 0.15}s both;
-                position: relative;
-            ">
-                <div style="font-size: 11px; color: #a0a0a0; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">${play.players.name}</div>
-                <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #eaeaea;">${play.cards.name}</div>
-                <div style="font-size: 28px; font-weight: bold; color: #e94560; margin: 8px 0; text-shadow: 0 0 10px rgba(233, 69, 96, 0.4);">${play.value}</div>
-                <div style="font-size: 11px; color: #a0a0a0; background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
-                ${isTriunfo ? '<div style="position: absolute; top: -8px; right: -8px; background: #ecc94b; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);">👑</div>' : ''}
-            </div>
-        `}).join('');
-        
-        console.log('Rendered plays to container');
-        
-    } catch (err) {
-        console.error('Error in loadTablePlays:', err);
-    }
+        .subscribe();
 }
 
 async function loadGameState(room) {
@@ -908,10 +930,20 @@ async function loadGameState(room) {
     state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
     state.totalRounds = state.cardsPerPlayer;
     
+    // Load existing plays for current round
+    const { data: existingPlays } = await supabaseClient
+        .from('current_turn_plays')
+        .select('*, players(name, seat_number), cards(*)')
+        .eq('room_id', state.roomId)
+        .order('created_at', { ascending: true });
+    
+    if (existingPlays) {
+        state.cachedPlays = existingPlays;
+        renderTableCards();
+    }
+    
     if (room.phase === 'playing') {
         await loadMyHand();
-        // Load plays immediately
-        loadTablePlays();
     }
 }
 
