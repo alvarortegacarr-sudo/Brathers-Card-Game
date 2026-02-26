@@ -822,13 +822,13 @@ function setupRealtime() {
                 }
                 
                 // Same phase - just update UI
-                if (room.current_set !== oldRoom.current_set) {
-                    console.log('Set changed:', oldRoom.current_set, '->', room.current_set);
-                    state.hasPlayedThisRound = false;
-                    state.isResolvingRound = false;
-                    state.cachedPlays = [];
-                    await loadMyHand();
-                }
+if (room.current_set !== oldRoom.current_set) {
+    state.hasPlayedThisRound = false;
+    state.isResolvingRound = false;
+    await new Promise(r => setTimeout(r, 3000));
+    state.cachedPlays = [];
+    await loadMyHand();
+}
                 
                 updatePhaseUI();
             }
@@ -884,16 +884,6 @@ function setupRealtime() {
         )
         .subscribe();
     
-    supabaseClient
-        .channel(`plays-delete-${state.roomId}`)
-        .on('postgres_changes',
-            { event: 'DELETE', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-            () => {
-                state.cachedPlays = [];
-                renderTableCards();
-            }
-        )
-        .subscribe();
 }
 
 async function loadGameState(room) {
