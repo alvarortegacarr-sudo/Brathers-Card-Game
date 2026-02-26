@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - ONLINE MULTIPLAYER FIXED VERSION
+// BRA - ONLINE MULTIPLAYER FIXED VERSION v2
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -199,11 +199,18 @@ async function startGame() {
 }
 
 // ==========================================
-// PHASE HANDLERS
+// PHASE HANDLERS - FIXED
 // ==========================================
 
 function enterPhase(phase, startTimer = true) {
-    console.log('Entering phase:', phase, 'current_set:', state.currentSet);
+    console.log('Entering phase:', phase, 'from:', state.phase, 'startTimer:', startTimer);
+    
+    // CRITICAL: Don't re-enter same phase unless explicitly starting fresh
+    if (state.phase === phase && !startTimer) {
+        console.log('Already in phase', phase, 'skipping re-entry');
+        return;
+    }
+    
     state.phase = phase;
     updatePhaseInfo();
     
@@ -631,8 +638,8 @@ async function playCard(cardId) {
     }
 }
 
-// FIXED: Render from merged DB + cache, filtered by current set
-async function renderTableCards() {
+// FIXED: Render from cache, filtered by current set
+function renderTableCards() {
     const container = document.getElementById('playsContainer');
     if (!container) {
         console.error('playsContainer not found!');
@@ -642,7 +649,7 @@ async function renderTableCards() {
     // Filter cache to current set only
     const relevantCache = state.cachedPlays.filter(p => p.set_number === state.currentSet);
     
-    console.log('Rendering table cards. Cache for current set:', relevantCache.length, 'total cache:', state.cachedPlays.length);
+    console.log('Rendering table cards. Cache for current set:', relevantCache.length, 'total cache:', state.cachedPlays.length, 'currentSet:', state.currentSet);
     
     if (relevantCache.length === 0) {
         container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
@@ -855,8 +862,9 @@ function setupRealtime() {
                 const room = payload.new;
                 const oldRoom = payload.old;
                 
-                // Handle phase changes
+                // Handle phase changes - CRITICAL FIX: Don't re-enter same phase
                 if (oldRoom.phase !== room.phase) {
+                    console.log('Phase changed from', oldRoom.phase, 'to', room.phase);
                     if (room.phase === 'triunfo' && room.triunfo_card_id) {
                         const { data: card } = await supabaseClient
                             .from('cards')
@@ -868,16 +876,20 @@ function setupRealtime() {
                     enterPhase(room.phase, true);
                 }
                 
-                // CRITICAL: Only clear cache when set changes, not on turn changes
-                if (oldRoom.current_set !== room.current_set && room.current_set > 0) {
+                // CRITICAL: Only clear cache when set changes to a NEW value
+                if (room.current_set !== oldRoom.current_set && room.current_set > 0) {
                     console.log('Set changed from', oldRoom.current_set, 'to', room.current_set, '- clearing cache');
                     state.cachedPlays = [];
                     state.cachedSet = room.current_set;
                     state.hasPlayedThisRound = false;
                     state.currentAttribute = null;
                     await loadMyHand();
+                    // Re-render to show empty table
+                    renderTableCards();
+                    renderHand();
                 }
                 
+                // Update state values
                 state.currentSet = room.current_set || 0;
                 state.currentTurn = room.current_turn || 0;
                 state.currentAttribute = room.current_attribute;
@@ -889,10 +901,14 @@ function setupRealtime() {
                 updateTurnIndicator();
                 highlightActiveSeat();
                 
+                // If in playing phase, update displays but don't re-enter phase
                 if (room.phase === 'playing') {
                     renderHand();
-                    // Refresh table cards to ensure sync
-                    renderTableCards();
+                    // Don't call renderTableCards here - let the play INSERT handler do it
+                    // or call it only if we haven't rendered this set yet
+                    if (state.cachedSet !== room.current_set) {
+                        renderTableCards();
+                    }
                 }
             }
         )
@@ -956,10 +972,11 @@ function setupRealtime() {
                 if (fullPlay) {
                     // Only add if for current set
                     if (fullPlay.set_number === state.currentSet) {
+                        console.log('Adding play to cache:', fullPlay.players.name);
                         state.cachedPlays.push(fullPlay);
                         renderTableCards();
                     } else {
-                        console.log('Play for different set, ignoring');
+                        console.log('Play for different set, ignoring. Play set:', fullPlay.set_number, 'current:', state.currentSet);
                     }
                 }
             }
