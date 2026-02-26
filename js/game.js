@@ -635,21 +635,21 @@ async function resolveRound() {
             .update({ won_rounds: newWonRounds })
             .eq('id', winner.player_id);
         
-        const container = document.getElementById('playsContainer');
-        if (container) {
-            container.innerHTML = `
-                <div style="text-align: center; padding: 2rem; animation: fadeIn 0.5s ease;">
-                    <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
-                    <div style="font-size: 1.5rem; color: var(--success); font-weight: bold;">${winner.players.name} wins!</div>
-                    <div style="font-size: 1.2rem; color: var(--highlight); margin-top: 0.5rem;">${winner.cards.name} (${winner.value})</div>
-                    <div style="font-size: 1rem; color: var(--text-dim); margin-top: 1rem;">Next round starting...</div>
-                </div>
-            `;
+await supabaseClient
+    .from('rooms')
+    .update({
+        game_data: { 
+            round_starter: state.roundStarter,
+            round_winner: {
+                name: winner.players.name,
+                cardName: winner.cards.name,
+                value: winner.value
+            }
         }
-        
-        addChat('System', `🏆 ${winner.players.name} wins the round with ${winner.cards.name} (${winner.value})!`);
-        
-        await new Promise(r => setTimeout(r, 3000));
+    })
+    .eq('id', state.roomId);
+
+await new Promise(r => setTimeout(r, 3000));
         
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
@@ -664,19 +664,24 @@ async function resolveRound() {
                 .from('rooms')
                 .update({ phase: 'scoring' })
                 .eq('id', state.roomId);
-        } else {
-            const nextSet = state.currentSet + 1;
-            
-            await supabaseClient
-                .from('rooms')
-                .update({
-                    current_set: nextSet,
-                    current_turn: winner.players.seat_number,
-                    current_attribute: null,
-                    game_data: { round_starter: winner.players.seat_number }
-                })
-                .eq('id', state.roomId);
-        }
+} else {
+    const nextSet = state.currentSet + 1;
+    
+    const sortedSeats = state.players.map(p => p.seat_number).sort((a, b) => a - b);
+    const currentStarterIdx = sortedSeats.indexOf(state.roundStarter);
+    const nextStarterIdx = (currentStarterIdx + 1) % sortedSeats.length;
+    const nextStarter = sortedSeats[nextStarterIdx];
+
+    await supabaseClient
+        .from('rooms')
+        .update({
+            current_set: nextSet,
+            current_turn: nextStarter,
+            current_attribute: null,
+            game_data: { round_starter: nextStarter }
+        })
+        .eq('id', state.roomId);
+}
         
     } catch (err) {
         console.error('Resolve round error:', err);
@@ -772,8 +777,25 @@ function setupRealtime() {
                 console.log('Room update:', payload);
                 const room = payload.new;
                 
-                const prevSet = state.currentSet;
-                const prevPhase = state.phase;
+const prevSet = state.currentSet;
+const prevPhase = state.phase;
+
+// Show winner message on all clients
+if (room.game_data?.round_winner) {
+    const w = room.game_data.round_winner;
+    const container = document.getElementById('playsContainer');
+    if (container) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 2rem; animation: fadeIn 0.5s ease;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
+                <div style="font-size: 1.5rem; color: var(--success); font-weight: bold;">${w.name} wins!</div>
+                <div style="font-size: 1.2rem; color: var(--highlight); margin-top: 0.5rem;">${w.cardName} (${w.value})</div>
+                <div style="font-size: 1rem; color: var(--text-dim); margin-top: 1rem;">Next round starting...</div>
+            </div>
+        `;
+    }
+    addChat('System', `🏆 ${w.name} wins the round with ${w.cardName} (${w.value})!`);
+}
 
                 // Update state values first
                 state.currentSet = room.current_set || 0;
