@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - WORKING FIX VERSION
+// BRA - WORKING FIX VERSION v3
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -31,9 +31,7 @@ const state = {
     hasPlayedThisRound: false,
     
     allCards: [],
-    // Cache plays - only cleared when DB deletes them
     cachedPlays: [],
-    // Track if we're waiting for resolution
     isResolvingRound: false
 };
 
@@ -123,7 +121,6 @@ async function startGame() {
         await supabaseClient.from('player_hands').delete().eq('room_id', state.roomId);
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
-        // Reset cache
         state.cachedPlays = [];
         state.isResolvingRound = false;
         
@@ -199,15 +196,15 @@ async function startGame() {
 }
 
 // ==========================================
-// PHASE HANDLERS - FIXED: No re-entry allowed
+// PHASE HANDLERS - FIXED
 // ==========================================
 
 function enterPhase(phase) {
     console.log('Entering phase:', phase, 'from:', state.phase);
     
-    // CRITICAL: Never re-enter the same phase
-    if (state.phase === phase) {
-        console.log('Already in phase', phase, 'skipping');
+    // Only skip if EXACT same phase AND we're already initialized
+    if (state.phase === phase && phase !== 'playing') {
+        console.log('Already in phase', phase, 'skipping re-entry');
         return;
     }
     
@@ -234,13 +231,15 @@ function enterPhase(phase) {
             break;
             
         case 'playing':
-            // Fresh start of playing phase
-            state.currentSet = 1;
-            state.roundStarter = 1;
-            state.currentTurn = 1;
-            state.hasPlayedThisRound = false;
-            state.cachedPlays = [];
-            state.isResolvingRound = false;
+            // CRITICAL: Only reset if coming from different phase
+            if (state.phase !== 'playing') {
+                state.currentSet = 1;
+                state.roundStarter = 1;
+                state.currentTurn = 1;
+                state.hasPlayedThisRound = false;
+                state.cachedPlays = [];
+                state.isResolvingRound = false;
+            }
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
@@ -256,16 +255,20 @@ function enterPhase(phase) {
     updateSeatDisplay();
 }
 
-// NEW: Update UI without re-initializing phase
-function updatePlayingUI() {
-    if (state.phase !== 'playing') return;
+// NEW: Update UI when state changes within same phase
+function refreshCurrentPhase() {
+    console.log('Refreshing phase:', state.phase);
     
-    console.log('Updating playing UI, set:', state.currentSet, 'turn:', state.currentTurn);
-    
-    renderHand();
-    updateTurnIndicator();
-    highlightActiveSeat();
-    // Don't call renderTableCards here - let play events handle it
+    switch(state.phase) {
+        case 'bidding':
+            renderBidding();
+            break;
+        case 'playing':
+            renderHand();
+            updateTurnIndicator();
+            highlightActiveSeat();
+            break;
+    }
 }
 
 function showTriunfo() {
@@ -290,6 +293,8 @@ function showTriunfo() {
 
 function renderBidding() {
     const container = document.getElementById('handContainer');
+    if (!container) return;
+    
     const isMyTurn = state.currentTurn === state.mySeat;
     const myPlayer = state.players.find(p => p.id === state.playerId);
     const hasBid = myPlayer?.predicted_rounds !== null && myPlayer?.predicted_rounds !== undefined;
@@ -416,7 +421,7 @@ async function placeBid(bid) {
 }
 
 // ==========================================
-// PLAYING - FIXED VERSION
+// PLAYING
 // ==========================================
 
 async function loadMyHand() {
@@ -648,7 +653,6 @@ async function playCard(cardId) {
     }
 }
 
-// FIXED: Render cards from cache - they stay until deleted from DB
 function renderTableCards() {
     const container = document.getElementById('playsContainer');
     if (!container) {
@@ -688,7 +692,6 @@ function renderTableCards() {
     `}).join('');
 }
 
-// FIXED: Host-only round resolution with winner display
 async function resolveRound() {
     if (!state.isHost) {
         console.log('Not host, skipping resolution');
@@ -883,7 +886,7 @@ function setupRealtime() {
                 const room = payload.new;
                 const oldRoom = payload.old;
                 
-                // Handle phase changes - ONLY enter phase if actually changing
+                // Handle phase changes
                 if (oldRoom.phase !== room.phase) {
                     console.log('Phase changed from', oldRoom.phase, 'to', room.phase);
                     if (room.phase === 'triunfo' && room.triunfo_card_id) {
@@ -895,10 +898,10 @@ function setupRealtime() {
                         state.triunfoCard = card;
                     }
                     enterPhase(room.phase);
-                    return; // Don't process further, enterPhase handles it
+                    return;
                 }
                 
-                // Same phase - just update state values
+                // Same phase - update state and refresh UI
                 state.currentSet = room.current_set || 0;
                 state.currentTurn = room.current_turn || 0;
                 state.currentAttribute = room.current_attribute;
@@ -915,8 +918,8 @@ function setupRealtime() {
                     await loadMyHand();
                 }
                 
-                // Update UI without re-initializing
-                updatePlayingUI();
+                // Refresh UI for current phase
+                refreshCurrentPhase();
             }
         )
         .subscribe();
@@ -985,7 +988,7 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // Listen for deletes (round resolution) - THIS CLEARS THE CARDS
+    // Listen for deletes (round resolution)
     supabaseClient
         .channel(`plays-delete-${state.roomId}`)
         .on('postgres_changes',
