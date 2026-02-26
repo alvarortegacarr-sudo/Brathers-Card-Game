@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - WORKING FIX VERSION v3
+// BRA - WORKING VERSION
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -38,10 +38,6 @@ const state = {
 if (!localStorage.getItem('playerId')) {
     localStorage.setItem('playerId', state.playerId);
 }
-
-// ==========================================
-// INITIALIZATION
-// ==========================================
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!state.roomCode) {
@@ -84,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (room.status === 'playing') {
             await loadGameState(room);
             if (state.phase !== 'waiting') {
-                enterPhase(state.phase);
+                initPhase(state.phase);
             }
         }
 
@@ -95,10 +91,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Failed to initialize game');
     }
 });
-
-// ==========================================
-// GAME START
-// ==========================================
 
 async function startGame() {
     if (state.gameStarting) return;
@@ -195,19 +187,9 @@ async function startGame() {
     }
 }
 
-// ==========================================
-// PHASE HANDLERS - FIXED
-// ==========================================
-
-function enterPhase(phase) {
-    console.log('Entering phase:', phase, 'from:', state.phase);
-    
-    // Only skip if EXACT same phase AND we're already initialized
-    if (state.phase === phase && phase !== 'playing') {
-        console.log('Already in phase', phase, 'skipping re-entry');
-        return;
-    }
-    
+// SEPARATED: Initialize phase (run once per phase)
+function initPhase(phase) {
+    console.log('Initializing phase:', phase);
     state.phase = phase;
     updatePhaseInfo();
     
@@ -231,15 +213,12 @@ function enterPhase(phase) {
             break;
             
         case 'playing':
-            // CRITICAL: Only reset if coming from different phase
-            if (state.phase !== 'playing') {
-                state.currentSet = 1;
-                state.roundStarter = 1;
-                state.currentTurn = 1;
-                state.hasPlayedThisRound = false;
-                state.cachedPlays = [];
-                state.isResolvingRound = false;
-            }
+            state.currentSet = 1;
+            state.roundStarter = 1;
+            state.currentTurn = 1;
+            state.hasPlayedThisRound = false;
+            state.cachedPlays = [];
+            state.isResolvingRound = false;
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
@@ -255,10 +234,8 @@ function enterPhase(phase) {
     updateSeatDisplay();
 }
 
-// NEW: Update UI when state changes within same phase
-function refreshCurrentPhase() {
-    console.log('Refreshing phase:', state.phase);
-    
+// SEPARATED: Update UI for current phase (run on every room update)
+function updatePhaseUI() {
     switch(state.phase) {
         case 'bidding':
             renderBidding();
@@ -286,10 +263,6 @@ function showTriunfo() {
         }
     }
 }
-
-// ==========================================
-// BIDDING
-// ==========================================
 
 function renderBidding() {
     const container = document.getElementById('handContainer');
@@ -393,13 +366,11 @@ async function placeBid(bid) {
         
         addChat('System', `${state.playerName} bid ${bid}`);
         
-        // Get next seat in order
         const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
         const currentIdx = sortedSeats.indexOf(state.currentTurn);
         const nextIdx = (currentIdx + 1) % sortedSeats.length;
         const nextTurn = sortedSeats[nextIdx];
         
-        // Check if we've cycled through all players
         const isLastBidder = nextTurn === sortedSeats[0] && currentIdx === sortedSeats.length - 1;
         
         if (isLastBidder) {
@@ -419,10 +390,6 @@ async function placeBid(bid) {
         alert('Failed to place bid');
     }
 }
-
-// ==========================================
-// PLAYING
-// ==========================================
 
 async function loadMyHand() {
     try {
@@ -536,27 +503,16 @@ async function selectAttribute(attr) {
 
 async function playCard(cardId) {
     if (!state.currentAttribute || state.hasPlayedThisRound || state.isResolvingRound) {
-        console.log('Cannot play:', { 
-            attr: state.currentAttribute, 
-            hasPlayed: state.hasPlayedThisRound,
-            isResolving: state.isResolvingRound 
-        });
         return;
     }
     
     const card = state.myHand.find(c => c.id === cardId);
-    if (!card) {
-        console.log('Card not found:', cardId);
-        return;
-    }
+    if (!card) return;
     
     const isTriunfo = card.id === state.triunfoCard?.id;
     const value = isTriunfo ? 99 : card[state.currentAttribute];
     
-    console.log('Playing card:', card.name, 'value:', value, 'seat:', state.mySeat);
-    
     try {
-        // Check if already played this round
         const { data: existingPlay } = await supabaseClient
             .from('current_turn_plays')
             .select('id')
@@ -565,12 +521,10 @@ async function playCard(cardId) {
             .maybeSingle();
         
         if (existingPlay) {
-            console.log('Already played this round!');
             state.hasPlayedThisRound = true;
             return;
         }
         
-        // Insert play into DB
         const { data: insertedPlay, error: insertError } = await supabaseClient
             .from('current_turn_plays')
             .insert({
@@ -584,12 +538,8 @@ async function playCard(cardId) {
             .select()
             .single();
         
-        if (insertError) {
-            console.error('Insert play error:', insertError);
-            throw insertError;
-        }
+        if (insertError) throw insertError;
         
-        // Update local hand
         await supabaseClient
             .from('player_hands')
             .update({ played: true })
@@ -598,7 +548,6 @@ async function playCard(cardId) {
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         state.hasPlayedThisRound = true;
         
-        // Add to cache immediately for display
         const playData = {
             id: insertedPlay.id,
             player_id: state.playerId,
@@ -611,33 +560,23 @@ async function playCard(cardId) {
         };
         state.cachedPlays.push(playData);
         
-        // Update display immediately
         renderTableCards();
-        
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        // Check if round complete from DB
         const { count: playCount } = await supabaseClient
             .from('current_turn_plays')
             .select('*', { count: 'exact', head: true })
             .eq('room_id', state.roomId);
         
-        console.log('Play count from DB:', playCount, 'expected:', state.players.length);
-        
-        // Only host resolves round
         if (playCount >= state.players.length && state.isHost && !state.isResolvingRound) {
             state.isResolvingRound = true;
-            console.log('Host resolving round...');
             setTimeout(() => resolveRound(), 2000);
         }
         
-        // Advance turn to next player
         const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
         const currentIdx = sortedSeats.indexOf(state.currentTurn);
         const nextIdx = (currentIdx + 1) % sortedSeats.length;
         const nextTurn = sortedSeats[nextIdx];
-        
-        console.log('Advancing turn:', { current: state.currentTurn, next: nextTurn });
         
         await supabaseClient
             .from('rooms')
@@ -655,12 +594,7 @@ async function playCard(cardId) {
 
 function renderTableCards() {
     const container = document.getElementById('playsContainer');
-    if (!container) {
-        console.error('playsContainer not found!');
-        return;
-    }
-    
-    console.log('Rendering table cards:', state.cachedPlays.length);
+    if (!container) return;
     
     if (state.cachedPlays.length === 0) {
         container.innerHTML = '<p class="no-cards">Waiting for cards...</p>';
@@ -693,33 +627,19 @@ function renderTableCards() {
 }
 
 async function resolveRound() {
-    if (!state.isHost) {
-        console.log('Not host, skipping resolution');
-        return;
-    }
-    
-    console.log('Host resolving round');
+    if (!state.isHost) return;
     
     try {
-        // Fetch fresh plays from DB
         const { data: plays, error } = await supabaseClient
             .from('current_turn_plays')
             .select('*, players(name, seat_number, won_rounds), cards(*)')
             .eq('room_id', state.roomId);
         
-        if (error || !plays || plays.length === 0) {
-            console.error('No plays to resolve:', error);
+        if (error || !plays || plays.length < state.players.length) {
             state.isResolvingRound = false;
             return;
         }
         
-        if (plays.length < state.players.length) {
-            console.log('Not all players played yet');
-            state.isResolvingRound = false;
-            return;
-        }
-        
-        // Find winner
         const winner = plays.reduce((best, play) => {
             if (play.value > best.value) return play;
             if (play.value === best.value) {
@@ -730,16 +650,12 @@ async function resolveRound() {
             return best;
         });
         
-        console.log('Winner:', winner.players.name, 'with', winner.cards.name);
-        
-        // Update winner's score in DB
         const newWonRounds = (winner.players.won_rounds || 0) + 1;
         await supabaseClient
             .from('players')
             .update({ won_rounds: newWonRounds })
             .eq('id', winner.player_id);
         
-        // Show winner on table BEFORE deleting plays
         const container = document.getElementById('playsContainer');
         if (container) {
             container.innerHTML = `
@@ -754,13 +670,10 @@ async function resolveRound() {
         
         addChat('System', `🏆 ${winner.players.name} wins the round with ${winner.cards.name} (${winner.value})!`);
         
-        // Wait for players to see the winner
         await new Promise(r => setTimeout(r, 3000));
         
-        // NOW delete plays - this will trigger cache clear for all players
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
-        // Check if game over
         const { data: remaining } = await supabaseClient
             .from('player_hands')
             .select('*')
@@ -869,14 +782,9 @@ async function resetGame() {
         .eq('id', state.roomId);
 }
 
-// ==========================================
-// REALTIME & UI - FIXED
-// ==========================================
-
 function setupRealtime() {
     console.log('Setting up realtime...');
     
-    // Room changes
     supabaseClient
         .channel(`room-${state.roomId}`)
         .on('postgres_changes', 
@@ -886,22 +794,7 @@ function setupRealtime() {
                 const room = payload.new;
                 const oldRoom = payload.old;
                 
-                // Handle phase changes
-                if (oldRoom.phase !== room.phase) {
-                    console.log('Phase changed from', oldRoom.phase, 'to', room.phase);
-                    if (room.phase === 'triunfo' && room.triunfo_card_id) {
-                        const { data: card } = await supabaseClient
-                            .from('cards')
-                            .select('*')
-                            .eq('id', room.triunfo_card_id)
-                            .single();
-                        state.triunfoCard = card;
-                    }
-                    enterPhase(room.phase);
-                    return;
-                }
-                
-                // Same phase - update state and refresh UI
+                // Update state values first
                 state.currentSet = room.current_set || 0;
                 state.currentTurn = room.current_turn || 0;
                 state.currentAttribute = room.current_attribute;
@@ -910,21 +803,38 @@ function setupRealtime() {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
-                // If set changed, reset for new round
+                // Handle phase change
+                if (oldRoom.phase !== room.phase) {
+                    console.log('Phase change detected:', oldRoom.phase, '->', room.phase);
+                    
+                    if (room.phase === 'triunfo' && room.triunfo_card_id) {
+                        const { data: card } = await supabaseClient
+                            .from('cards')
+                            .select('*')
+                            .eq('id', room.triunfo_card_id)
+                            .single();
+                        state.triunfoCard = card;
+                    }
+                    
+                    // Initialize new phase
+                    initPhase(room.phase);
+                    return;
+                }
+                
+                // Same phase - just update UI
                 if (room.current_set !== oldRoom.current_set) {
-                    console.log('New set started:', room.current_set);
+                    console.log('Set changed:', oldRoom.current_set, '->', room.current_set);
                     state.hasPlayedThisRound = false;
                     state.isResolvingRound = false;
+                    state.cachedPlays = [];
                     await loadMyHand();
                 }
                 
-                // Refresh UI for current phase
-                refreshCurrentPhase();
+                updatePhaseUI();
             }
         )
         .subscribe();
     
-    // Player changes
     supabaseClient
         .channel(`players-${state.roomId}`)
         .on('postgres_changes',
@@ -950,29 +860,16 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // Listen for plays
     supabaseClient
         .channel(`plays-${state.roomId}`)
         .on('postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
             async (payload) => {
-                console.log('Play INSERT received:', payload);
-                
                 const play = payload.new;
                 
-                // Don't double-add our own play
-                if (play.player_id === state.playerId) {
-                    console.log('Own play received via realtime, ignoring');
-                    return;
-                }
+                if (play.player_id === state.playerId) return;
+                if (state.cachedPlays.some(p => p.id === play.id)) return;
                 
-                // Check if already in cache
-                if (state.cachedPlays.some(p => p.id === play.id)) {
-                    console.log('Play already in cache');
-                    return;
-                }
-                
-                // Fetch full play data
                 const { data: fullPlay } = await supabaseClient
                     .from('current_turn_plays')
                     .select('*, players(name, seat_number), cards(*)')
@@ -980,7 +877,6 @@ function setupRealtime() {
                     .single();
                 
                 if (fullPlay) {
-                    console.log('Adding play to cache:', fullPlay.players.name);
                     state.cachedPlays.push(fullPlay);
                     renderTableCards();
                 }
@@ -988,13 +884,11 @@ function setupRealtime() {
         )
         .subscribe();
     
-    // Listen for deletes (round resolution)
     supabaseClient
         .channel(`plays-delete-${state.roomId}`)
         .on('postgres_changes',
             { event: 'DELETE', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
             () => {
-                console.log('Plays deleted (round resolved) - clearing cards');
                 state.cachedPlays = [];
                 renderTableCards();
             }
@@ -1023,7 +917,6 @@ async function loadGameState(room) {
     state.cardsPerPlayer = CARDS_PER_PLAYER[state.players.length] || 8;
     state.totalRounds = state.cardsPerPlayer;
     
-    // Load existing plays for current round
     const { data: existingPlays } = await supabaseClient
         .from('current_turn_plays')
         .select('*, players(name, seat_number), cards(*)')
@@ -1032,7 +925,6 @@ async function loadGameState(room) {
     
     if (existingPlays) {
         state.cachedPlays = existingPlays;
-        console.log('Loaded existing plays:', existingPlays.length);
     }
     
     if (room.phase === 'playing') {
