@@ -547,31 +547,10 @@ async function playCard(cardId) {
         
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         state.hasPlayedThisRound = true;
-        
-        const playData = {
-            id: insertedPlay.id,
-            player_id: state.playerId,
-            card_id: cardId,
-            attribute: state.currentAttribute,
-            value: value,
-            seat_number: state.mySeat,
-            players: { name: state.playerName, seat_number: state.mySeat },
-            cards: { ...card, id: cardId }
-        };
-        state.cachedPlays.push(playData);
-        
-        renderTableCards();
+
+
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
         
-        const { count: playCount } = await supabaseClient
-            .from('current_turn_plays')
-            .select('*', { count: 'exact', head: true })
-            .eq('room_id', state.roomId);
-        
-        if (playCount >= state.players.length && state.isHost && !state.isResolvingRound) {
-            state.isResolvingRound = true;
-            setTimeout(() => resolveRound(), 2000);
-        }
         
         const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
         const currentIdx = sortedSeats.indexOf(state.currentTurn);
@@ -861,29 +840,33 @@ if (room.current_set !== oldRoom.current_set) {
         )
         .subscribe();
     
-    supabaseClient
-        .channel(`plays-${state.roomId}`)
-        .on('postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
-            async (payload) => {
-                const play = payload.new;
-                
-                if (play.player_id === state.playerId) return;
-                if (state.cachedPlays.some(p => p.id === play.id)) return;
-                
-                const { data: fullPlay } = await supabaseClient
-                    .from('current_turn_plays')
-                    .select('*, players(name, seat_number), cards(*)')
-                    .eq('id', play.id)
-                    .single();
-                
-                if (fullPlay) {
-                    state.cachedPlays.push(fullPlay);
-                    renderTableCards();
-                }
+supabaseClient
+    .channel(`plays-${state.roomId}`)
+    .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'current_turn_plays', filter: `room_id=eq.${state.roomId}` },
+        async (payload) => {
+            const play = payload.new;
+
+            if (state.cachedPlays.some(p => p.id === play.id)) return;
+
+            const { data: fullPlay } = await supabaseClient
+                .from('current_turn_plays')
+                .select('*, players(name, seat_number), cards(*)')
+                .eq('id', play.id)
+                .single();
+
+            if (fullPlay) {
+                state.cachedPlays.push(fullPlay);
+                renderTableCards();
             }
-        )
-        .subscribe();
+
+            if (state.cachedPlays.length >= state.players.length && state.isHost && !state.isResolvingRound) {
+                state.isResolvingRound = true;
+                setTimeout(() => resolveRound(), 2000);
+            }
+        }
+    )
+    .subscribe();
     
 }
 
