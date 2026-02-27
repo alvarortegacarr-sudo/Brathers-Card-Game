@@ -880,6 +880,236 @@ main {
     box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px rgba(255,243,176,0.4);
 }
 
+/* ===================== CATEGORY CARD THEMES ===================== */
+
+/* BRONZE */
+.card.cat-bronze {
+    background: linear-gradient(160deg, #f5e6d0 0%, #e8d0b0 55%, #c8a878 100%);
+    border-color: #b87040;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 10px rgba(184,112,64,0.3);
+}
+.card.cat-bronze::before {
+    background-image:
+        linear-gradient(45deg, rgba(184,112,64,0.1) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(184,112,64,0.1) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(184,112,64,0.1) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(184,112,64,0.1) 75%);
+    background-size: 10px 10px;
+}
+.card.cat-bronze::after {
+    background: linear-gradient(105deg, transparent 40%, rgba(220,150,80,0.3) 50%, transparent 60%);
+    background-size: 200% 100%;
+    background-position: 200% center;
+}
+.card.cat-bronze:hover {
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 18px rgba(184,112,64,0.5);
+}
+.card.cat-bronze .card-name {
+    border-bottom-color: rgba(184,112,64,0.4);
+}
+.card.cat-bronze .stat {
+    background: rgba(184,112,64,0.1);
+    border-color: rgba(184,112,64,0.25);
+}
+.card.cat-bronze .category-badge {
+    background: linear-gradient(135deg, #8b4513, #b87040, #8b4513);
+    color: #f5e6d0;
+    border-color: #d4956a;
+}
+
+/* SILVER */
+.card.cat-silver {
+    background: linear-gradient(160deg, #f0f0f0 0%, #dcdcdc 55%, #b8b8b8 100%);
+    border-color: #909090;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5), 0 0 10px rgba(144,144,144,0.3);
+}
+.card.cat-silver::before {
+    background-image:
+        linear-gradient(45deg, rgba(144,144,144,0.1) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(144,144,144,0.1) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(144,144,144,0.1) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(144,144,144,0.1) 75%);
+    background-size: 10px 10px;
+}
+.card.cat-silver::after {
+    background: linear-gradient(105deg, transparent 40%, rgba(220,220,220,0.5) 50%, transparent 60%);
+    background-size: 200% 100%;
+    background-position: 200% center;
+}
+.card.cat-silver:hover {
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 18px rgba(180,180,180,0.5);
+}
+.card.cat-silver .card-name {
+    border-bottom-color: rgba(144,144,144,0.4);
+}
+.card.cat-silver .stat {
+    background: rgba(144,144,144,0.1);
+    border-color: rgba(144,144,144,0.25);
+}
+.card.cat-silver .category-badge {
+    background: linear-gradient(135deg, #606060, #a0a0a0, #606060);
+    color: #f0f0f0;
+    border-color: #c8c8c8;
+}
+
+/* GOLD */
+.card.cat-gold {
+    background: linear-gradient(160deg, #fffbe8 0%, #f5e8a0 55%, #e8d060 100%);
+    border-color: var(--gold);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px rgba(212,160,23,0.4);
+}
+.card.cat-gold::before {
+    background-image:
+        linear-gradient(45deg, rgba(212,160,23,0.1) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(212,160,23,0.1) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(212,160,23,0.1) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(212,160,23,0.1) 75%);
+    background-size: 10px 10px;
+}
+.card.cat-gold::after {
+    background: linear-gradient(105deg, transparent 40%, rgba(255,243,176,0.5) 50%, transparent 60%);
+    background-size: 200% 100%;
+    background-position: 200% center;
+}
+.card.cat-gold:hover {
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 24px rgba(212,160,23,0.6);
+}
+.card.cat-gold .card-name {
+    border-bottom-color: rgba(212,160,23,0.4);
+}
+.card.cat-gold .stat {
+    background: rgba(212,160,23,0.1);
+    border-color: rgba(212,160,23,0.25);
+}
+.card.cat-gold .category-badge {
+    background: linear-gradient(135deg, var(--gold-dark), var(--gold), var(--gold-dark));
+    color: #1a1008;
+    border-color: var(--gold-shine);
+}
+
+/* LEYEND */
+.card.cat-leyend {
+    background: linear-gradient(160deg, #f0e8ff 0%, #d8b8f8 55%, #b070e8 100%);
+    border-color: #9040d0;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 24px rgba(144,64,208,0.5);
+    animation: leyendGlow 3s ease-in-out infinite;
+}
+@keyframes leyendGlow {
+    0%, 100% { box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px rgba(144,64,208,0.4); }
+    50% { box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 36px rgba(144,64,208,0.8); }
+}
+.card.cat-leyend::before {
+    background-image:
+        linear-gradient(45deg, rgba(144,64,208,0.12) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(144,64,208,0.12) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(144,64,208,0.12) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(144,64,208,0.12) 75%);
+    background-size: 10px 10px;
+}
+.card.cat-leyend::after {
+    background: linear-gradient(105deg, transparent 40%, rgba(200,160,255,0.4) 50%, transparent 60%);
+    background-size: 200% 100%;
+    background-position: 200% center;
+}
+.card.cat-leyend:hover {
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 36px rgba(144,64,208,0.7);
+    animation: none;
+}
+.card.cat-leyend .card-name {
+    border-bottom-color: rgba(144,64,208,0.4);
+    color: #2a0050;
+}
+.card.cat-leyend .stat {
+    background: rgba(144,64,208,0.1);
+    border-color: rgba(144,64,208,0.25);
+}
+.card.cat-leyend .stat-label { color: #5a1090; }
+.card.cat-leyend .stat-value { color: #2a0050; }
+.card.cat-leyend .category-badge {
+    background: linear-gradient(135deg, #5a0090, #9040d0, #5a0090);
+    color: #f0e8ff;
+    border-color: #c090f0;
+}
+
+/* TOTI — special rainbow/holographic */
+.card.cat-toti {
+    background: linear-gradient(160deg, #fff8f0 0%, #ffe8d0 30%, #ffd0e8 60%, #e8d0ff 100%);
+    border-color: #ff80c0;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 30px rgba(255,128,192,0.6);
+    animation: totiShift 4s ease-in-out infinite;
+}
+@keyframes totiShift {
+    0%   { border-color: #ff80c0; box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 28px rgba(255,128,192,0.6); }
+    25%  { border-color: #80c0ff; box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 28px rgba(128,192,255,0.6); }
+    50%  { border-color: #80ffb0; box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 28px rgba(128,255,176,0.6); }
+    75%  { border-color: #ffc080; box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 28px rgba(255,192,128,0.6); }
+    100% { border-color: #ff80c0; box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 28px rgba(255,128,192,0.6); }
+}
+.card.cat-toti::before {
+    background-image:
+        linear-gradient(45deg, rgba(255,128,192,0.1) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(128,192,255,0.1) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(128,255,176,0.1) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(255,192,128,0.1) 75%);
+    background-size: 10px 10px;
+}
+.card.cat-toti::after {
+    background: linear-gradient(105deg,
+        transparent 35%,
+        rgba(255,200,230,0.4) 42%,
+        rgba(200,230,255,0.4) 50%,
+        rgba(200,255,220,0.4) 58%,
+        transparent 65%
+    );
+    background-size: 200% 100%;
+    background-position: 200% center;
+    animation: totiShimmer 2.5s ease-in-out infinite;
+}
+@keyframes totiShimmer {
+    0%, 100% { background-position: 200% center; }
+    50% { background-position: -200% center; }
+}
+.card.cat-toti:hover {
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 40px rgba(255,128,192,0.7);
+    animation: none;
+}
+.card.cat-toti .card-name { color: #1a0030; border-bottom-color: rgba(200,100,180,0.4); }
+.card.cat-toti .stat {
+    background: rgba(200,100,180,0.08);
+    border-color: rgba(200,100,180,0.2);
+}
+.card.cat-toti .stat-label { color: #6a1050; }
+.card.cat-toti .stat-value { color: #1a0030; }
+.card.cat-toti .category-badge {
+    background: linear-gradient(135deg, #cc0060, #ff80c0, #8040ff, #cc0060);
+    background-size: 200% 100%;
+    animation: totiBadgeShift 3s linear infinite;
+    color: #fff;
+    border-color: #ffb0e0;
+}
+@keyframes totiBadgeShift {
+    0% { background-position: 0% center; }
+    100% { background-position: 200% center; }
+}
+
+/* Category styles also apply to played cards on the table */
+.played-card.cat-bronze { background: linear-gradient(160deg, #f5e6d0 0%, #e8d0b0 55%, #c8a878 100%); border-color: #b87040; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 12px rgba(184,112,64,0.4); }
+.played-card.cat-silver { background: linear-gradient(160deg, #f0f0f0 0%, #dcdcdc 55%, #b8b8b8 100%); border-color: #909090; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 12px rgba(144,144,144,0.4); }
+.played-card.cat-gold   { background: linear-gradient(160deg, #fffbe8 0%, #f5e8a0 55%, #e8d060 100%); border-color: var(--gold); box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 20px rgba(212,160,23,0.5); }
+.played-card.cat-leyend { background: linear-gradient(160deg, #f0e8ff 0%, #d8b8f8 55%, #b070e8 100%); border-color: #9040d0; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 24px rgba(144,64,208,0.6); }
+.played-card.cat-toti   { background: linear-gradient(160deg, #fff8f0 0%, #ffe8d0 30%, #ffd0e8 60%, #e8d0ff 100%); border-color: #ff80c0; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 28px rgba(255,128,192,0.6); animation: totiShift 4s ease-in-out infinite; }
+.category-badge {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid;
+    display: inline-block;
+    margin-bottom: 0.3rem;
+}
+
 .card-name {
     font-family: 'Bebas Neue', sans-serif;
     font-weight: 400;

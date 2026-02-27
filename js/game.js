@@ -6,6 +6,19 @@ const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
 const ATTR_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
 const CARDS_PER_PLAYER = { 2: 20, 3: 13, 4: 10, 5: 8 };
 
+const CATEGORY_LABELS = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', leyend: 'Leyend', toti: 'Toti' };
+
+function cardCategoryClass(card) {
+    if (!card.category) return '';
+    return `cat-${card.category.toLowerCase()}`;
+}
+
+function cardBadgeHTML(card) {
+    if (!card.category) return '';
+    const label = CATEGORY_LABELS[card.category.toLowerCase()] || card.category;
+    return `<div class="category-badge">${label}</div>`;
+}
+
 const state = {
     playerId: localStorage.getItem('playerId') || crypto.randomUUID(),
     playerName: localStorage.getItem('currentPlayer'),
@@ -373,8 +386,10 @@ function renderBidding() {
     
     state.myHand.forEach((card, idx) => {
         const isTriunfo = card.id === state.triunfoCard?.id;
+        const catClass = isTriunfo ? 'triunfo' : cardCategoryClass(card);
         html += `
-            <div class="card ${isTriunfo ? 'triunfo' : ''}" style="width: 110px; padding: 0.6rem; opacity: 0.9; animation-delay: ${idx * 0.05}s;">
+            <div class="card ${catClass}" style="width: 110px; padding: 0.6rem; opacity: 0.9; animation-delay: ${idx * 0.05}s;">
+                ${cardBadgeHTML(card)}
                 <div class="card-name" style="font-size: 0.75rem;">${card.name} ${isTriunfo ? '👑' : ''}</div>
                 <div class="card-stats">
                     ${ATTRIBUTES.map(attr => `
@@ -556,12 +571,14 @@ function renderHand() {
     
     state.myHand.forEach((card, idx) => {
         const isTriunfo = card.id === state.triunfoCard?.id;
+        const catClass = isTriunfo ? 'triunfo' : cardCategoryClass(card);
         const canPlay = isMyTurn && state.currentAttribute && !state.hasPlayedThisRound;
         
         html += `
-            <div class="card ${isTriunfo ? 'triunfo' : ''}" 
+            <div class="card ${catClass}" 
                  ${canPlay ? `ondblclick="playCard(${card.id})"` : ''}
                  style="width: 120px; ${!canPlay ? 'opacity: 0.55; cursor: default;' : 'cursor: pointer;'} animation-delay: ${idx * 0.04}s;">
+                ${cardBadgeHTML(card)}
                 <div class="card-name">
                     ${card.name} ${isTriunfo ? '👑' : ''}
                 </div>
@@ -683,10 +700,15 @@ function renderTableCards() {
     container.innerHTML = state.cachedPlays.map((play, index) => {
         const isTriunfo = play.cards.id === state.triunfoCard?.id;
         const isStarter = play.seat_number === state.roundStarter;
+        const catClass = isTriunfo ? '' : (play.cards.category ? `cat-${play.cards.category.toLowerCase()}` : '');
+        const badgeHTML = (play.cards.category && !isTriunfo)
+            ? `<div class="category-badge" style="margin-bottom:4px;">${CATEGORY_LABELS[play.cards.category.toLowerCase()] || play.cards.category}</div>`
+            : '';
         
         return `
-        <div class="played-card ${isStarter ? 'starter' : ''}" style="animation-delay: ${index * 0.1}s;">
+        <div class="played-card ${isStarter ? 'starter' : ''} ${catClass}" style="animation-delay: ${index * 0.1}s;">
             <div class="player-name">${play.players.name}</div>
+            ${badgeHTML}
             <div class="card-name">${play.cards.name}</div>
             <div class="value">${play.value}</div>
             <div class="attribute">${ATTR_NAMES[play.attribute]}</div>

@@ -4,11 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bra - Card Game</title>
+    <link rel="icon" href="css/Favicon.jpeg" type="image/png">
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/game.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="js/supabase.js"></script>
 </head>
 <body>
+    <!-- Phase Transition Overlay (injected by JS, but anchor lives here) -->
+    <div id="phaseOverlay" class="phase-overlay"></div>
+
     <div id="app">
         <!-- Header -->
         <header>
@@ -57,7 +65,7 @@
                         </div>
                     </div>
 
-                    <!-- Center Area - REORGANIZED -->
+                    <!-- Center Area -->
                     <div class="center">
                         <!-- Top: Triunfo and Discarded side by side -->
                         <div class="top-cards">
@@ -72,9 +80,9 @@
                             </div>
                         </div>
                         
-                        <!-- Middle: Played Cards (PROMINENT) -->
+                        <!-- Middle: Played Cards -->
                         <div id="current-play" class="current-play">
-                            <div class="plays-label">CARDS IN PLAY</div>
+                            <div class="plays-label">Cards in Play</div>
                             <div class="plays-container" id="playsContainer">
                                 <p class="no-cards">Waiting for cards...</p>
                             </div>
@@ -87,7 +95,7 @@
 
                 <!-- Host Controls -->
                 <div id="hostControls" class="host-controls hidden">
-                    <button onclick="startGame()" class="start-btn">Start Game</button>
+                    <button id="startBtn" onclick="startGame()" class="start-btn">🚀 Start Game</button>
                     <p class="min-players">Need at least 2 players</p>
                 </div>
             </div>
