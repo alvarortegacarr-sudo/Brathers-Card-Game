@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap');
+
 * {
     margin: 0;
     padding: 0;
@@ -5,23 +7,40 @@
 }
 
 :root {
-    --bg: #1a1a2e;
-    --bg-light: #16213e;
-    --accent: #0f3460;
-    --highlight: #e94560;
-    --text: #eaeaea;
-    --text-dim: #a0a0a0;
-    --card-bg: #2d3748;
-    --success: #48bb78;
-    --warning: #ecc94b;
+    --bg: #0e0e0e;
+    --bg-light: #161616;
+    --bg-card: #f5f0e8;
+    --bg-card-dark: #e8e0d0;
+    --gold-light: #f5d78e;
+    --gold: #d4a017;
+    --gold-dark: #9a7210;
+    --gold-shine: #fff3b0;
+    --cream: #faf6ee;
+    --accent: #c8941a;
+    --highlight: #d4a017;
+    --text-dark: #1a1008;
+    --text-mid: #4a3810;
+    --text-dim-dark: #7a6030;
+    --text: #f5f0e8;
+    --text-dim: #b0a070;
+    --success: #2d8a4e;
+    --danger: #b33a1e;
+    --table-green: #1a2e18;
+    --table-felt: #1e3520;
+    --shadow-gold: rgba(212, 160, 23, 0.4);
+    --shadow-dark: rgba(0, 0, 0, 0.8);
 }
 
+/* ===================== BASE ===================== */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Rajdhani', sans-serif;
     background: var(--bg);
     color: var(--text);
     height: 100vh;
     overflow: hidden;
+    background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(212, 160, 23, 0.05) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 50%, rgba(212, 160, 23, 0.03) 0%, transparent 60%);
 }
 
 #app {
@@ -31,58 +50,98 @@ body {
     max-height: 100vh;
 }
 
-/* Header */
+/* ===================== HEADER ===================== */
 header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1.5rem;
-    background: var(--bg-light);
-    border-bottom: 1px solid var(--accent);
+    padding: 0 1.5rem;
+    background: linear-gradient(180deg, #0a0a0a 0%, #111111 100%);
+    border-bottom: 2px solid var(--gold-dark);
     flex-shrink: 0;
-    height: 60px;
+    height: 56px;
+    position: relative;
+}
+
+header::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), var(--gold-shine), var(--gold), transparent);
+    opacity: 0.6;
 }
 
 .room-info {
     display: flex;
     gap: 0.75rem;
     align-items: center;
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.15em;
+    color: var(--gold);
+    font-size: 1rem;
 }
 
 .game-title {
-    font-size: 1.5rem;
-    font-weight: bold;
-    letter-spacing: 0.3em;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 0.4em;
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
+    background: linear-gradient(180deg, var(--gold-shine) 0%, var(--gold) 40%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    filter: drop-shadow(0 2px 8px rgba(212, 160, 23, 0.5));
 }
 
 button {
-    background: var(--accent);
-    color: var(--text);
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
+    background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold) 50%, var(--gold-dark) 100%);
+    color: var(--text-dark);
+    border: 1px solid var(--gold-shine);
+    padding: 0.4rem 1rem;
+    border-radius: 3px;
     cursor: pointer;
+    font-family: 'Bebas Neue', sans-serif;
     font-size: 0.9rem;
+    letter-spacing: 0.1em;
     transition: all 0.2s;
+    font-weight: 400;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
 }
 
 button:hover:not(:disabled) {
-    background: var(--highlight);
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-shine) 50%, var(--gold) 100%);
+    box-shadow: 0 4px 16px var(--shadow-gold), inset 0 1px 0 rgba(255,255,255,0.3);
+    transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+    transform: translateY(0);
 }
 
 button:disabled {
-    opacity: 0.5;
+    opacity: 0.4;
     cursor: not-allowed;
+    filter: grayscale(0.5);
 }
 
 .leave-btn {
-    background: var(--highlight);
+    background: linear-gradient(135deg, #6b1e0e 0%, #b33a1e 50%, #6b1e0e 100%);
+    border-color: #e05030;
+    color: #fff;
 }
 
-/* Main Layout */
+.leave-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #b33a1e 0%, #e05030 50%, #b33a1e 100%);
+    box-shadow: 0 4px 16px rgba(180, 60, 30, 0.5);
+}
+
+/* ===================== MAIN LAYOUT ===================== */
 main {
     display: flex;
     flex: 1;
@@ -90,7 +149,7 @@ main {
     min-height: 0;
 }
 
-/* Table Area - Scrollable */
+/* ===================== TABLE AREA ===================== */
 .table-area {
     flex: 1;
     display: flex;
@@ -101,22 +160,70 @@ main {
     position: relative;
 }
 
-/* Table - Circular playing area */
+/* Felt table */
 .table {
     position: relative;
     width: 100%;
     max-width: 650px;
     margin: 0 auto;
     aspect-ratio: 1;
-    background: radial-gradient(circle, rgba(22,33,62,0.8) 0%, rgba(26,26,46,0.9) 70%);
+    background:
+        radial-gradient(circle at 50% 50%, #243828 0%, #1a2e1a 40%, #111e11 100%);
     border-radius: 50%;
-    border: 3px solid var(--accent);
+    border: 4px solid var(--gold-dark);
     flex-shrink: 0;
     min-height: 450px;
-    box-shadow: 0 0 30px rgba(15, 52, 96, 0.3);
+    box-shadow:
+        0 0 0 2px #0a0a0a,
+        0 0 0 6px var(--gold-dark),
+        0 0 0 8px #0a0a0a,
+        0 0 60px rgba(0,0,0,0.9),
+        inset 0 0 80px rgba(0,0,0,0.5);
+    overflow: hidden;
 }
 
-/* Seats */
+/* Felt texture pattern */
+.table::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background-image: 
+        repeating-linear-gradient(
+            45deg,
+            rgba(255,255,255,0.01) 0px,
+            rgba(255,255,255,0.01) 1px,
+            transparent 1px,
+            transparent 8px
+        );
+    pointer-events: none;
+}
+
+/* Gold ring shine */
+.table::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: conic-gradient(
+        from 0deg,
+        transparent 0%,
+        rgba(255, 243, 176, 0.4) 15%,
+        transparent 30%,
+        transparent 60%,
+        rgba(255, 243, 176, 0.2) 75%,
+        transparent 90%
+    );
+    pointer-events: none;
+    animation: ringShine 8s linear infinite;
+}
+
+@keyframes ringShine {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* ===================== SEATS ===================== */
 .seat {
     position: absolute;
     width: 110px;
@@ -131,29 +238,35 @@ main {
 .seat[data-seat="5"] { top: 22%; left: 0%; }
 
 .seat-info {
-    background: var(--card-bg);
-    padding: 0.6rem;
-    border-radius: 10px;
-    border: 2px solid transparent;
-    font-size: 0.85rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    background: linear-gradient(160deg, #1a1008 0%, #0e0a04 100%);
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--gold-dark);
+    font-size: 0.8rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6), inset 0 1px 0 rgba(212,160,23,0.1);
+    transition: all 0.3s ease;
 }
 
 .seat.active .seat-info {
-    border-color: var(--highlight);
-    box-shadow: 0 0 15px rgba(233, 69, 96, 0.5);
-    animation: pulse 2s infinite;
+    border-color: var(--gold);
+    box-shadow:
+        0 0 20px var(--shadow-gold),
+        0 4px 12px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,243,176,0.2);
+    animation: seatPulse 2s ease-in-out infinite;
 }
 
-@keyframes pulse {
-    0%, 100% { box-shadow: 0 0 15px rgba(233, 69, 96, 0.5); }
-    50% { box-shadow: 0 0 25px rgba(233, 69, 96, 0.8); }
+@keyframes seatPulse {
+    0%, 100% { box-shadow: 0 0 20px var(--shadow-gold), 0 4px 12px rgba(0,0,0,0.6); }
+    50% { box-shadow: 0 0 35px rgba(212,160,23,0.7), 0 4px 12px rgba(0,0,0,0.6); }
 }
 
 .seat-name {
-    font-weight: bold;
-    margin-bottom: 0.25rem;
-    font-size: 0.85rem;
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.15rem;
+    font-size: 0.95rem;
+    color: var(--gold-light);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -162,14 +275,15 @@ main {
 .seat-bid {
     font-size: 0.75rem;
     color: var(--text-dim);
+    font-weight: 600;
 }
 
 .seat-bid.placed {
-    color: var(--success);
-    font-weight: bold;
+    color: var(--gold);
+    font-weight: 700;
 }
 
-/* Center Area - REORGANIZED */
+/* ===================== CENTER AREA ===================== */
 .center {
     position: absolute;
     top: 50%;
@@ -183,7 +297,7 @@ main {
     z-index: 10;
 }
 
-/* Top: Triunfo and Discarded */
+/* ===================== TRIUNFO CARD ===================== */
 .top-cards {
     display: flex;
     gap: 1rem;
@@ -192,22 +306,39 @@ main {
 }
 
 .triunfo, .discarded {
-    background: var(--card-bg);
+    background: linear-gradient(160deg, var(--cream) 0%, var(--bg-card) 60%, var(--bg-card-dark) 100%);
     padding: 0.6rem;
-    border-radius: 10px;
+    border-radius: 8px;
     text-align: center;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Diamond geometric pattern overlay */
+.triunfo::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: 
+        linear-gradient(45deg, rgba(212,160,23,0.08) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(212,160,23,0.08) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(212,160,23,0.08) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(212,160,23,0.08) 75%);
+    background-size: 12px 12px;
+    pointer-events: none;
 }
 
 .triunfo {
-    border: 2px solid var(--warning);
-    width: 130px;
+    border: 2px solid var(--gold);
+    width: 120px;
+    box-shadow: 0 0 20px var(--shadow-gold), 0 4px 16px rgba(0,0,0,0.5);
 }
 
 .discarded {
-    border: 2px solid var(--text-dim);
-    width: 110px;
-    opacity: 0.8;
+    border: 2px solid rgba(212,160,23,0.3);
+    width: 100px;
+    opacity: 0.7;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 .triunfo.hidden, .discarded.hidden {
@@ -215,50 +346,105 @@ main {
 }
 
 .triunfo .label, .discarded .label {
+    font-family: 'Bebas Neue', sans-serif;
     font-size: 0.65rem;
-    color: var(--text-dim);
+    color: var(--gold-dark);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 0.25rem;
+    letter-spacing: 0.2em;
+    margin-bottom: 0.2rem;
 }
 
 .triunfo .card-name, .discarded .card-name {
-    font-weight: bold;
+    font-family: 'Bebas Neue', sans-serif;
+    font-weight: 400;
     font-size: 0.95rem;
-    margin-bottom: 0.25rem;
+    color: var(--text-dark);
+    margin-bottom: 0.2rem;
+    letter-spacing: 0.05em;
 }
 
 .triunfo .crown {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
 }
 
-/* Middle: Current Play (CARDS IN PLAY) - PROMINENT */
+/* ===================== TRIUNFO REVEAL ANIMATION ===================== */
+@keyframes triunfoReveal {
+    0% {
+        opacity: 0;
+        transform: scale(0.3) rotateY(90deg);
+        filter: brightness(3);
+    }
+    40% {
+        transform: scale(1.15) rotateY(0deg);
+        filter: brightness(1.5);
+    }
+    60% {
+        transform: scale(0.95) rotateY(0deg);
+    }
+    80% {
+        transform: scale(1.05) rotateY(0deg);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1) rotateY(0deg);
+        filter: brightness(1);
+    }
+}
+
+.triunfo:not(.hidden) {
+    animation: triunfoReveal 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+/* Gold shimmer sweep */
+@keyframes shimmerSweep {
+    0% { background-position: -200% center; }
+    100% { background-position: 200% center; }
+}
+
+.triunfo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        105deg,
+        transparent 40%,
+        rgba(255, 243, 176, 0.4) 50%,
+        transparent 60%
+    );
+    background-size: 200% 100%;
+    animation: shimmerSweep 3s ease-in-out infinite;
+    pointer-events: none;
+    border-radius: 6px;
+}
+
+/* ===================== CURRENT PLAY AREA ===================== */
 .current-play {
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    background: rgba(0,0,0,0.4);
-    border-radius: 16px;
-    padding: 1rem;
-    border: 2px solid var(--highlight);
-    box-shadow: 0 0 20px rgba(233, 69, 96, 0.2);
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--gold-dark);
+    box-shadow: 0 0 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(212,160,23,0.1);
+    backdrop-filter: blur(4px);
 }
 
 .plays-label {
+    font-family: 'Bebas Neue', sans-serif;
     font-size: 0.8rem;
-    color: var(--highlight);
+    color: var(--gold);
     text-transform: uppercase;
-    letter-spacing: 0.15em;
-    margin-bottom: 0.75rem;
-    font-weight: bold;
+    letter-spacing: 0.3em;
+    margin-bottom: 0.6rem;
 }
 
 .plays-container {
     display: flex;
     justify-content: center;
-    gap: 0.75rem;
-    min-height: 130px;
+    gap: 0.6rem;
+    min-height: 120px;
     align-items: center;
     flex-wrap: wrap;
     width: 100%;
@@ -266,110 +452,227 @@ main {
 
 .no-cards {
     color: var(--text-dim);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-style: italic;
+    letter-spacing: 0.05em;
 }
 
-/* Played Card Styling */
+/* ===================== PLAYED CARD (ON TABLE) ===================== */
 .played-card {
-    background: linear-gradient(135deg, var(--card-bg), #1a202c);
-    padding: 0.875rem;
-    border-radius: 12px;
-    min-width: 100px;
+    background: linear-gradient(160deg, var(--cream) 0%, var(--bg-card) 60%, var(--bg-card-dark) 100%);
+    padding: 0.75rem 0.6rem;
+    border-radius: 10px;
+    min-width: 90px;
     text-align: center;
-    border: 3px solid var(--accent);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
-    animation: slideIn 0.4s ease both;
-    transition: transform 0.2s, box-shadow 0.2s;
+    border: 2px solid var(--gold);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 12px var(--shadow-gold);
     position: relative;
+    overflow: hidden;
+    transform-origin: bottom center;
+}
+
+/* Diamond pattern on played cards */
+.played-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(45deg, rgba(212,160,23,0.06) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(212,160,23,0.06) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(212,160,23,0.06) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(212,160,23,0.06) 75%);
+    background-size: 10px 10px;
+    pointer-events: none;
+    border-radius: 8px;
+}
+
+.played-card.starter {
+    border-color: var(--gold-shine);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 20px rgba(255,243,176,0.4);
+}
+
+/* Card fly-in animation */
+@keyframes cardFlyIn {
+    0% {
+        opacity: 0;
+        transform: translateY(-80px) scale(0.5) rotate(-15deg);
+        filter: brightness(2);
+    }
+    60% {
+        transform: translateY(8px) scale(1.05) rotate(2deg);
+        filter: brightness(1.2);
+    }
+    80% {
+        transform: translateY(-4px) scale(0.98) rotate(-1deg);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotate(0deg);
+        filter: brightness(1);
+    }
+}
+
+.played-card {
+    animation: cardFlyIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
 .played-card:hover {
     transform: translateY(-8px) scale(1.08);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    box-shadow: 0 16px 36px rgba(0,0,0,0.7), 0 0 20px var(--shadow-gold);
     z-index: 20;
-}
-
-.played-card.starter {
-    border-color: var(--warning);
-    box-shadow: 0 0 15px rgba(236, 201, 75, 0.4);
-}
-
-@keyframes slideIn {
-    from { 
-        opacity: 0; 
-        transform: translateY(-30px) scale(0.7) rotate(-5deg); 
-    }
-    to { 
-        opacity: 1; 
-        transform: translateY(0) scale(1) rotate(0deg); 
-    }
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .played-card .player-name {
-    font-size: 0.8rem;
-    color: var(--text-dim);
-    margin-bottom: 0.5rem;
-    font-weight: bold;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.7rem;
+    color: var(--gold-dark);
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
 }
 
 .played-card .card-name {
-    font-size: 0.95rem;
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-    color: var(--text);
-    line-height: 1.2;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-dark);
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.03em;
+    line-height: 1.1;
 }
 
 .played-card .value {
-    font-size: 1.8rem;
-    font-weight: bold;
-    color: var(--highlight);
-    margin: 0.5rem 0;
-    text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    color: var(--gold-dark);
+    margin: 0.2rem 0;
+    line-height: 1;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 .played-card .attribute {
-    font-size: 0.75rem;
-    color: var(--text-dim);
-    background: rgba(0,0,0,0.4);
-    padding: 3px 10px;
-    border-radius: 12px;
+    font-size: 0.65rem;
+    color: var(--text-mid);
+    background: rgba(212,160,23,0.15);
+    border: 1px solid rgba(212,160,23,0.3);
+    padding: 2px 8px;
+    border-radius: 10px;
     display: inline-block;
-    margin-top: 0.25rem;
+    margin-top: 0.2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
 }
 
 .played-card .triunfo-icon {
     position: absolute;
     top: -8px;
     right: -8px;
-    background: var(--warning);
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-shine) 50%, var(--gold-dark) 100%);
     border-radius: 50%;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    font-size: 0.8rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    animation: crownSpin 0.5s ease both;
 }
 
-/* Turn Indicator */
-.turn-indicator {
-    font-size: 1rem;
-    color: var(--warning);
-    font-weight: 600;
-    text-align: center;
+@keyframes crownSpin {
+    from { transform: scale(0) rotate(-180deg); }
+    to { transform: scale(1) rotate(0deg); }
+}
+
+/* ===================== PHASE TRANSITION OVERLAY ===================== */
+.phase-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.phase-overlay.show {
+    animation: phaseOverlayAnim 3.5s ease forwards;
+}
+
+@keyframes phaseOverlayAnim {
+    0% { opacity: 0; background: rgba(0,0,0,0); }
+    10% { opacity: 1; background: rgba(0,0,0,0.85); }
+    70% { opacity: 1; background: rgba(0,0,0,0.85); }
+    100% { opacity: 0; background: rgba(0,0,0,0); }
+}
+
+.phase-title-big {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 5rem;
+    letter-spacing: 0.4em;
+    background: linear-gradient(180deg, var(--gold-shine) 0%, var(--gold) 40%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 4px 20px rgba(212,160,23,0.8));
+    animation: titleEntrance 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.3s both;
+}
+
+.phase-subtitle-big {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.2rem;
+    color: var(--gold-light);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    animation: titleEntrance 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.5s both;
     margin-top: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: rgba(0,0,0,0.3);
+}
+
+@keyframes titleEntrance {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.8);
+        filter: blur(10px) drop-shadow(0 4px 20px rgba(212,160,23,0.8));
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        filter: drop-shadow(0 4px 20px rgba(212,160,23,0.8));
+    }
+}
+
+/* Golden divider lines */
+.phase-divider {
+    width: 300px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), var(--gold-shine), var(--gold), transparent);
+    margin: 1rem 0;
+    animation: dividerExpand 0.8s ease 0.4s both;
+}
+
+@keyframes dividerExpand {
+    from { transform: scaleX(0); opacity: 0; }
+    to { transform: scaleX(1); opacity: 1; }
+}
+
+/* ===================== TURN INDICATOR ===================== */
+.turn-indicator {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1rem;
+    color: var(--gold);
+    text-align: center;
+    padding: 0.4rem 1.2rem;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--gold-dark);
     border-radius: 20px;
     min-width: 200px;
+    letter-spacing: 0.15em;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
 }
 
-/* Host Controls */
+/* ===================== HOST CONTROLS ===================== */
 .host-controls {
     text-align: center;
     padding: 1rem;
@@ -382,37 +685,49 @@ main {
 
 .start-btn {
     font-size: 1.1rem;
-    padding: 0.875rem 1.75rem;
-    background: var(--success);
+    padding: 0.75rem 2rem;
+    background: linear-gradient(135deg, #1a5c2a 0%, #2d8a4e 50%, #1a5c2a 100%);
+    border-color: #48bb78;
+    color: #fff;
+    letter-spacing: 0.15em;
     margin-bottom: 0.5rem;
+    box-shadow: 0 4px 16px rgba(45,138,78,0.4);
+}
+
+.start-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2d8a4e 0%, #48bb78 50%, #2d8a4e 100%);
+    box-shadow: 0 6px 24px rgba(72, 187, 120, 0.5);
 }
 
 .min-players {
-    color: var(--text-dim);
+    color: var(--gold);
     font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
 }
 
-/* Sidebar */
+/* ===================== SIDEBAR ===================== */
 .sidebar {
-    width: 260px;
-    background: var(--bg-light);
-    border-left: 1px solid var(--accent);
+    width: 250px;
+    background: linear-gradient(180deg, #0e0e0e 0%, #111111 100%);
+    border-left: 1px solid var(--gold-dark);
     display: flex;
     flex-direction: column;
-    padding: 1rem;
+    padding: 0.75rem;
     gap: 0.75rem;
     overflow-y: auto;
     flex-shrink: 0;
 }
 
 .sidebar h3 {
-    font-size: 0.8rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.85rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-dim);
+    letter-spacing: 0.25em;
+    color: var(--gold);
     margin-bottom: 0.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--accent);
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--gold-dark);
 }
 
 .players-panel, .scores-panel {
@@ -428,16 +743,17 @@ main {
 
 #playerList, #scoreList {
     list-style: none;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }
 
 .chat-log {
     flex: 1;
     overflow-y: auto;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     margin-bottom: 0.5rem;
     padding: 0.5rem;
-    background: rgba(0,0,0,0.2);
+    background: rgba(0,0,0,0.3);
+    border: 1px solid rgba(212,160,23,0.15);
     border-radius: 4px;
 }
 
@@ -448,30 +764,51 @@ main {
 
 .chat-input input {
     flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--accent);
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--gold-dark);
     color: var(--text);
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    font-family: 'Rajdhani', sans-serif;
+    transition: border-color 0.2s;
 }
 
-/* Hand Area */
+.chat-input input:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 8px rgba(212,160,23,0.2);
+}
+
+/* ===================== HAND AREA ===================== */
 .hand-area {
-    background: var(--bg-light);
-    border-top: 1px solid var(--accent);
-    padding: 1rem;
+    background: linear-gradient(180deg, #0a0a0a 0%, #0e0e0e 100%);
+    border-top: 2px solid var(--gold-dark);
+    padding: 0.75rem 1rem;
     max-height: 35vh;
     overflow-y: auto;
     flex-shrink: 0;
+    position: relative;
+}
+
+.hand-area::before {
+    content: '';
+    position: absolute;
+    top: -4px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold-shine), transparent);
+    opacity: 0.4;
 }
 
 .phase-info {
+    font-family: 'Bebas Neue', sans-serif;
     text-align: center;
-    font-size: 1rem;
+    font-size: 1.1rem;
     margin-bottom: 0.75rem;
-    color: var(--warning);
-    font-weight: 500;
+    color: var(--gold);
+    letter-spacing: 0.25em;
 }
 
 .hand-container {
@@ -481,35 +818,78 @@ main {
     flex-wrap: wrap;
 }
 
-/* Cards in hand */
+/* ===================== HAND CARDS (FIFA STYLE) ===================== */
 .card {
-    background: linear-gradient(135deg, var(--card-bg), #1a202c);
-    border: 2px solid var(--accent);
+    background: linear-gradient(160deg, var(--cream) 0%, var(--bg-card) 55%, var(--bg-card-dark) 100%);
+    border: 2px solid var(--gold);
     border-radius: 10px;
-    padding: 0.75rem;
-    width: 130px;
-    transition: transform 0.2s, border-color 0.2s;
+    padding: 0.6rem;
+    width: 120px;
+    transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s;
     position: relative;
     user-select: none;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* Diamond texture on hand cards */
+.card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(45deg, rgba(212,160,23,0.07) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(212,160,23,0.07) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(212,160,23,0.07) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(212,160,23,0.07) 75%);
+    background-size: 10px 10px;
+    pointer-events: none;
+}
+
+/* Shimmer on hover */
+.card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        105deg,
+        transparent 40%,
+        rgba(255, 243, 176, 0.3) 50%,
+        transparent 60%
+    );
+    background-size: 200% 100%;
+    background-position: 200% center;
+    transition: background-position 0.4s ease;
+    pointer-events: none;
+    border-radius: 8px;
+}
+
+.card:hover::after {
+    background-position: -200% center;
 }
 
 .card:hover {
-    transform: translateY(-5px);
-    border-color: var(--highlight);
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 16px 32px rgba(0,0,0,0.6), 0 0 20px var(--shadow-gold);
+    z-index: 10;
 }
 
 .card.triunfo {
-    border-color: var(--warning);
-    box-shadow: 0 0 15px rgba(236, 201, 75, 0.3);
+    border-color: var(--gold-shine);
+    background: linear-gradient(160deg, #fffbe8 0%, #f5e8c0 55%, #e8d4a0 100%);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px rgba(255,243,176,0.4);
 }
 
 .card-name {
-    font-weight: bold;
+    font-family: 'Bebas Neue', sans-serif;
+    font-weight: 400;
     text-align: center;
-    margin-bottom: 0.5rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(212,160,23,0.3);
+    font-size: 0.85rem;
+    color: var(--text-dark);
+    letter-spacing: 0.05em;
 }
 
 .card-stats {
@@ -520,90 +900,205 @@ main {
 }
 
 .stat {
-    background: rgba(0,0,0,0.3);
-    padding: 3px 2px;
+    background: rgba(212, 160, 23, 0.08);
+    border: 1px solid rgba(212,160,23,0.15);
+    padding: 3px 1px;
     border-radius: 3px;
-    font-size: 0.7rem;
+    transition: all 0.2s;
 }
 
 .stat-label {
     display: block;
-    color: var(--text-dim);
-    font-size: 0.6rem;
+    color: var(--text-mid);
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
 }
 
 .stat-value {
     display: block;
-    font-weight: bold;
-    font-size: 0.8rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.85rem;
+    color: var(--text-dark);
+    line-height: 1.1;
 }
 
 .stat.active {
-    background: var(--highlight);
-    color: white;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-shine) 100%);
+    border-color: var(--gold-shine);
 }
 
 .stat.active .stat-label {
-    color: rgba(255,255,255,0.8);
+    color: var(--text-dark);
 }
 
-/* Attribute buttons */
-.attr-btn.car { background: #ef4444; }
-.attr-btn.cul { background: #8b5cf6; }
-.attr-btn.tet { background: #10b981; }
-.attr-btn.fis { background: #3b82f6; }
-.attr-btn.per { background: #f59e0b; }
+.stat.active .stat-value {
+    color: var(--text-dark);
+}
 
-/* Scrollbar */
+/* ===================== ATTRIBUTE BUTTONS ===================== */
+.attr-btn {
+    font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 0.1em;
+    font-size: 1rem;
+    padding: 0.6rem 1.25rem;
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: white;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.attr-btn.car { background: linear-gradient(135deg, #991b1b, #ef4444); }
+.attr-btn.cul { background: linear-gradient(135deg, #4c1d95, #8b5cf6); }
+.attr-btn.tet { background: linear-gradient(135deg, #065f46, #10b981); }
+.attr-btn.fis { background: linear-gradient(135deg, #1e3a8a, #3b82f6); }
+.attr-btn.per { background: linear-gradient(135deg, #92400e, #f59e0b); }
+
+.attr-btn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.05);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+}
+
+/* ===================== BID BUTTONS ===================== */
+.bid-btn {
+    width: 50px;
+    height: 50px;
+    border-radius: 50% !important;
+    font-family: 'Bebas Neue', sans-serif !important;
+    font-size: 1.3rem !important;
+    background: linear-gradient(135deg, var(--gold-dark), var(--gold)) !important;
+    border: 2px solid var(--gold-shine) !important;
+    color: var(--text-dark) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+    transition: all 0.2s !important;
+}
+
+.bid-btn:hover:not(:disabled) {
+    transform: translateY(-3px) scale(1.1) !important;
+    box-shadow: 0 8px 20px var(--shadow-gold) !important;
+    background: linear-gradient(135deg, var(--gold), var(--gold-shine)) !important;
+}
+
+/* ===================== WINNER ANNOUNCEMENT ===================== */
+@keyframes winnerEntry {
+    0% { opacity: 0; transform: scale(0.5); filter: blur(20px); }
+    60% { transform: scale(1.1); }
+    80% { transform: scale(0.97); }
+    100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes trophyBounce {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-10px) rotate(-5deg); }
+    75% { transform: translateY(-5px) rotate(5deg); }
+}
+
+.winner-display {
+    animation: winnerEntry 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+.trophy-icon {
+    display: inline-block;
+    animation: trophyBounce 1s ease-in-out infinite;
+    font-size: 3rem;
+}
+
+/* ===================== SCORING SECTION ===================== */
+.score-results {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.score-item {
+    background: linear-gradient(160deg, rgba(212,160,23,0.08) 0%, rgba(0,0,0,0.3) 100%);
+    border: 1px solid var(--gold-dark);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    transition: all 0.3s ease;
+    animation: scoreReveal 0.5s ease both;
+}
+
+@keyframes scoreReveal {
+    from { opacity: 0; transform: translateX(-20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+/* ===================== WAITING MESSAGE ===================== */
+.waiting-message {
+    text-align: center;
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 1rem;
+    letter-spacing: 0.05em;
+}
+
+/* ===================== SCROLLBAR ===================== */
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--bg);
+    background: #0a0a0a;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--accent);
-    border-radius: 4px;
+    background: var(--gold-dark);
+    border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--highlight);
+    background: var(--gold);
 }
 
-/* Responsive */
+/* ===================== RESPONSIVE ===================== */
 @media (max-width: 1024px) {
-    .sidebar {
-        width: 220px;
-    }
-    .table {
-        min-height: 400px;
-    }
-    .plays-container {
-        min-height: 100px;
-    }
-    .played-card {
-        min-width: 85px;
-        padding: 0.6rem;
-    }
+    .sidebar { width: 220px; }
+    .table { min-height: 400px; }
+    .plays-container { min-height: 100px; }
+    .played-card { min-width: 80px; padding: 0.5rem; }
 }
 
 @media (max-width: 768px) {
-    main {
-        flex-direction: column;
-    }
+    main { flex-direction: column; }
     .sidebar {
         width: 100%;
         height: 200px;
         border-left: none;
-        border-top: 1px solid var(--accent);
+        border-top: 1px solid var(--gold-dark);
     }
-    .table {
-        min-height: 350px;
-    }
-    .seat {
-        width: 90px;
-    }
+    .table { min-height: 350px; }
+    .seat { width: 90px; }
+}
+
+/* ===================== UTILITY ANIMATIONS ===================== */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes goldGlow {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(212,160,23,0.4)); }
+    50% { filter: drop-shadow(0 0 16px rgba(212,160,23,0.8)); }
+}
+
+/* ===================== PARTICLE BURST (for phase transitions) ===================== */
+.particle {
+    position: fixed;
+    pointer-events: none;
+    border-radius: 50%;
+    z-index: 1001;
+    animation: particleFly 1.2s ease-out forwards;
+}
+
+@keyframes particleFly {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0); }
 }

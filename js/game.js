@@ -1,5 +1,5 @@
 // ==========================================
-// BRA - WORKING VERSION
+// BRA - UPGRADED AESTHETIC VERSION
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
@@ -38,6 +38,79 @@ const state = {
 if (!localStorage.getItem('playerId')) {
     localStorage.setItem('playerId', state.playerId);
 }
+
+// ===================== ANIMATION HELPERS =====================
+
+function showPhaseOverlay(title, subtitle, duration = 3500) {
+    // Remove existing overlay
+    const existing = document.getElementById('phaseOverlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'phaseOverlay';
+    overlay.className = 'phase-overlay';
+    overlay.innerHTML = `
+        <div class="phase-divider"></div>
+        <div class="phase-title-big">${title}</div>
+        <div class="phase-subtitle-big">${subtitle}</div>
+        <div class="phase-divider"></div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Force reflow then animate
+    requestAnimationFrame(() => {
+        overlay.classList.add('show');
+    });
+
+    setTimeout(() => {
+        overlay.remove();
+    }, duration);
+}
+
+function spawnParticles(x, y, count = 18, colors = ['#d4a017', '#f5d78e', '#fff3b0', '#c8941a']) {
+    for (let i = 0; i < count; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        
+        const angle = (i / count) * Math.PI * 2;
+        const speed = 60 + Math.random() * 120;
+        const dx = Math.cos(angle) * speed + 'px';
+        const dy = (Math.sin(angle) * speed - 60) + 'px';
+        const size = 4 + Math.random() * 8;
+        const color = colors[Math.floor(Math.random() * colors.length)];
+
+        particle.style.cssText = `
+            left: ${x}px;
+            top: ${y}px;
+            width: ${size}px;
+            height: ${size}px;
+            background: ${color};
+            --dx: ${dx};
+            --dy: ${dy};
+            animation-duration: ${0.8 + Math.random() * 0.6}s;
+            animation-delay: ${Math.random() * 0.15}s;
+        `;
+        document.body.appendChild(particle);
+        setTimeout(() => particle.remove(), 1500);
+    }
+}
+
+function spawnWinnerParticles() {
+    // Spawn from multiple points across the screen
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    spawnParticles(cx, cy, 30);
+    setTimeout(() => spawnParticles(cx - 150, cy - 50, 15), 200);
+    setTimeout(() => spawnParticles(cx + 150, cy - 50, 15), 350);
+    setTimeout(() => spawnParticles(cx, cy - 80, 20), 500);
+}
+
+function animateCardEntry(element, delay = 0) {
+    element.style.animationDelay = `${delay}s`;
+    element.style.animationFillMode = 'both';
+}
+
+// ===================== INIT =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!state.roomCode) {
@@ -91,6 +164,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Failed to initialize game');
     }
 });
+
+// ===================== START GAME =====================
 
 async function startGame() {
     if (state.gameStarting) return;
@@ -171,7 +246,7 @@ async function startGame() {
             })
             .eq('id', state.roomId);
 
-        addChat('System', `🎴 El Triunfo is ${triunfo.name}!`);
+        addChat('System', `👑 El Triunfo is ${triunfo.name}!`);
         if (discarded) {
             addChat('System', `🗑️ Discarded: ${discarded.name}`);
         }
@@ -187,7 +262,8 @@ async function startGame() {
     }
 }
 
-// SEPARATED: Initialize phase (run once per phase)
+// ===================== PHASE MANAGEMENT =====================
+
 function initPhase(phase) {
     console.log('Initializing phase:', phase);
     state.phase = phase;
@@ -195,7 +271,15 @@ function initPhase(phase) {
     
     switch(phase) {
         case 'triunfo':
+            // Big cinematic reveal
+            showPhaseOverlay('EL TRIUNFO', state.triunfoCard?.name || '—', 3500);
             showTriunfo();
+            // Spawn gold particles around triunfo area
+            setTimeout(() => {
+                const cx = window.innerWidth / 2;
+                const cy = window.innerHeight / 2;
+                spawnParticles(cx, cy - 80, 25);
+            }, 400);
             setTimeout(async () => {
                 try {
                     await supabaseClient
@@ -209,6 +293,7 @@ function initPhase(phase) {
             break;
             
         case 'bidding':
+            showPhaseOverlay('BIDDING', 'How many rounds will you win?', 2500);
             loadMyHand().then(() => renderBidding());
             break;
             
@@ -219,6 +304,7 @@ function initPhase(phase) {
             state.hasPlayedThisRound = false;
             state.cachedPlays = [];
             state.isResolvingRound = false;
+            showPhaseOverlay('PLAY', 'Choose your attribute — fight!', 2000);
             loadMyHand().then(() => {
                 renderHand();
                 updateTurnIndicator();
@@ -227,14 +313,14 @@ function initPhase(phase) {
             break;
             
         case 'scoring':
-            calculateScores();
+            showPhaseOverlay('FINAL SCORE', 'The results are in...', 2500);
+            setTimeout(() => calculateScores(), 1200);
             break;
     }
     
     updateSeatDisplay();
 }
 
-// SEPARATED: Update UI for current phase (run on every room update)
 function updatePhaseUI() {
     switch(state.phase) {
         case 'bidding':
@@ -247,6 +333,8 @@ function updatePhaseUI() {
             break;
     }
 }
+
+// ===================== TRIUNFO DISPLAY =====================
 
 function showTriunfo() {
     const triunfoDiv = document.getElementById('triunfo');
@@ -264,6 +352,8 @@ function showTriunfo() {
     }
 }
 
+// ===================== BIDDING =====================
+
 function renderBidding() {
     const container = document.getElementById('handContainer');
     if (!container) return;
@@ -277,18 +367,20 @@ function renderBidding() {
     
     let html = '';
     
-    html += '<div style="margin-bottom: 2rem;"><h3 style="text-align: center; margin-bottom: 1rem; color: var(--highlight);">Your Cards</h3><div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.5rem;">';
+    html += `<div style="margin-bottom: 1.5rem;">
+        <h3 style="text-align: center; margin-bottom: 1rem; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.2em; color: var(--gold); font-size: 1.2rem;">Your Cards</h3>
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; margin-bottom: 1.5rem;">`;
     
-    state.myHand.forEach(card => {
+    state.myHand.forEach((card, idx) => {
         const isTriunfo = card.id === state.triunfoCard?.id;
         html += `
-            <div class="card ${isTriunfo ? 'triunfo' : ''}" style="width: 120px; padding: 0.75rem; opacity: 0.9;">
-                <div class="card-name" style="font-size: 0.85rem;">${card.name} ${isTriunfo ? '👑' : ''}</div>
-                <div class="card-stats" style="grid-template-columns: repeat(5, 1fr); gap: 2px;">
+            <div class="card ${isTriunfo ? 'triunfo' : ''}" style="width: 110px; padding: 0.6rem; opacity: 0.9; animation-delay: ${idx * 0.05}s;">
+                <div class="card-name" style="font-size: 0.75rem;">${card.name} ${isTriunfo ? '👑' : ''}</div>
+                <div class="card-stats">
                     ${ATTRIBUTES.map(attr => `
-                        <div class="stat" style="padding: 2px;">
-                            <span class="stat-label" style="font-size: 0.55rem;">${ATTR_NAMES[attr]}</span>
-                            <span class="stat-value" style="font-size: 0.75rem; color: ${isTriunfo ? 'var(--warning)' : 'inherit'};">${isTriunfo ? 99 : card[attr]}</span>
+                        <div class="stat">
+                            <span class="stat-label">${ATTR_NAMES[attr]}</span>
+                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 99 : card[attr]}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -300,16 +392,16 @@ function renderBidding() {
     
     if (hasBid) {
         html += `
-            <div class="waiting-message" style="padding: 2rem;">
-                <h3 style="color: var(--success);">Bid placed: ${myPlayer.predicted_rounds}</h3>
-                <p>Waiting for others...</p>
+            <div style="text-align: center; padding: 1.5rem; background: rgba(212,160,23,0.08); border: 1px solid var(--gold-dark); border-radius: 10px;">
+                <div style="font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--gold); letter-spacing: 0.2em;">Bid Placed: ${myPlayer.predicted_rounds}</div>
+                <p style="color: var(--text-dim); margin-top: 0.5rem; letter-spacing: 0.05em;">Waiting for others...</p>
             </div>
         `;
     } else if (!isMyTurn) {
         const currentPlayer = state.players.find(p => p.seat_number === state.currentTurn);
         html += `
-            <div class="waiting-message" style="padding: 2rem;">
-                <p>Waiting for ${currentPlayer?.name || 'player'} to bid...</p>
+            <div style="text-align: center; padding: 1.5rem; color: var(--text-dim); font-style: italic;">
+                <p>Waiting for <strong style="color: var(--gold);">${currentPlayer?.name || 'player'}</strong> to bid...</p>
             </div>
         `;
     } else {
@@ -326,9 +418,9 @@ function renderBidding() {
         const sumPreviousBids = previousBidders.reduce((sum, p) => sum + (p.predicted_rounds || 0), 0);
         
         html += `
-            <div class="bidding-panel" style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 12px;">
-                <h3 style="margin-bottom: 1rem;">How many rounds will you win?</h3>
-                <div class="bid-buttons" style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
+            <div style="text-align: center; padding: 1rem; background: rgba(0,0,0,0.3); border: 1px solid var(--gold-dark); border-radius: 12px;">
+                <h3 style="font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.2em; color: var(--gold); margin-bottom: 1rem; font-size: 1.1rem;">How many rounds will you win?</h3>
+                <div style="display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap;">
         `;
         
         for (let i = 0; i <= maxBid; i++) {
@@ -337,8 +429,8 @@ function renderBidding() {
             const isDisabled = wouldEqualTotal;
             
             html += `
-                <button class="bid-btn" onclick="placeBid(${i})" ${isDisabled ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : ''} 
-                    style="width: 50px; height: 50px; border-radius: 50%; font-size: 1.2rem; font-weight: bold; background: ${isDisabled ? 'var(--text-dim)' : 'var(--accent)'}; color: white; border: none; cursor: pointer;">
+                <button class="bid-btn" onclick="placeBid(${i})" ${isDisabled ? 'disabled' : ''}
+                    style="${isDisabled ? 'opacity: 0.25 !important; cursor: not-allowed !important;' : ''}">
                     ${i}
                 </button>
             `;
@@ -346,9 +438,8 @@ function renderBidding() {
         
         html += '</div>';
         if (isLastBidder) {
-            html += `<p style="color: var(--highlight); margin-top: 1rem; font-size: 0.9rem;">
-                You're last! Sum of all bids cannot equal ${maxBid}.<br>
-                Current sum of previous bids: ${sumPreviousBids}
+            html += `<p style="color: var(--gold); margin-top: 1rem; font-size: 0.85rem; letter-spacing: 0.05em;">
+                You're last! Sum cannot equal ${maxBid} · Previous sum: ${sumPreviousBids}
             </p>`;
         }
         html += '</div>';
@@ -391,6 +482,8 @@ async function placeBid(bid) {
     }
 }
 
+// ===================== HAND LOADING =====================
+
 async function loadMyHand() {
     try {
         const { data: handData, error } = await supabaseClient
@@ -412,6 +505,8 @@ async function loadMyHand() {
     }
 }
 
+// ===================== RENDER HAND =====================
+
 function renderHand() {
     const container = document.getElementById('handContainer');
     if (!container) return;
@@ -425,12 +520,11 @@ function renderHand() {
     
     if (isStarter && !state.currentAttribute && isMyTurn) {
         html += `
-            <div class="attribute-panel" style="text-align: center; padding: 1rem; margin-bottom: 1rem; background: rgba(0,0,0,0.2); border-radius: 12px;">
-                <h3 style="margin-bottom: 1rem;">Select Attribute</h3>
-                <div class="attribute-buttons" style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+            <div style="text-align: center; padding: 0.75rem 1rem; margin-bottom: 1rem; background: rgba(0,0,0,0.3); border: 1px solid var(--gold-dark); border-radius: 12px;">
+                <h3 style="font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.2em; color: var(--gold); margin-bottom: 0.75rem; font-size: 1.1rem;">Select Attribute</h3>
+                <div style="display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap;">
                     ${ATTRIBUTES.map(attr => `
-                        <button class="attr-btn ${attr}" onclick="selectAttribute('${attr}')" 
-                            style="padding: 0.75rem 1.5rem; font-size: 1rem; font-weight: bold; text-transform: uppercase; border-radius: 8px; border: none; cursor: pointer; color: white;">
+                        <button class="attr-btn ${attr}" onclick="selectAttribute('${attr}')">
                             ${ATTR_NAMES[attr]}
                         </button>
                     `).join('')}
@@ -440,40 +534,42 @@ function renderHand() {
     } else if (!state.currentAttribute) {
         const starter = state.players.find(p => p.seat_number === state.roundStarter);
         html += `
-            <div class="waiting-message" style="text-align: center; padding: 1rem;">
-                <p>Waiting for ${starter?.name} to select attribute...</p>
+            <div style="text-align: center; padding: 0.75rem; color: var(--text-dim); font-style: italic; margin-bottom: 0.75rem;">
+                Waiting for <strong style="color: var(--gold);">${starter?.name}</strong> to select attribute...
             </div>
         `;
     } else {
         html += `
-            <div style="text-align: center; margin-bottom: 1rem; padding: 1rem; background: rgba(233, 69, 96, 0.1); border-radius: 8px;">
-                <span style="color: var(--highlight); font-size: 1.3rem; font-weight: bold;">
+            <div style="text-align: center; margin-bottom: 0.75rem; padding: 0.6rem 1rem; background: rgba(212,160,23,0.1); border: 1px solid var(--gold-dark); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 1rem;">
+                <span style="font-family: 'Bebas Neue', sans-serif; color: var(--gold); font-size: 1.2rem; letter-spacing: 0.2em;">
                     Playing: ${ATTR_NAMES[state.currentAttribute]}
                 </span>
-                ${!isMyTurn ? '<p style="margin-top: 0.5rem;">Waiting for your turn...</p>' : '<p style="margin-top: 0.5rem; color: var(--success);">Double-click card to play</p>'}
+                ${!isMyTurn 
+                    ? '<span style="color: var(--text-dim); font-size: 0.85rem;">Waiting for your turn...</span>'
+                    : '<span style="color: var(--success); font-size: 0.85rem; font-weight: 600;">Double-click to play</span>'
+                }
             </div>
         `;
     }
     
-    html += '<div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center;">';
+    html += '<div style="display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center;">';
     
-    state.myHand.forEach(card => {
+    state.myHand.forEach((card, idx) => {
         const isTriunfo = card.id === state.triunfoCard?.id;
         const canPlay = isMyTurn && state.currentAttribute && !state.hasPlayedThisRound;
         
         html += `
             <div class="card ${isTriunfo ? 'triunfo' : ''}" 
                  ${canPlay ? `ondblclick="playCard(${card.id})"` : ''}
-                 style="width: 130px; ${!canPlay ? 'opacity: 0.6;' : 'cursor: pointer;'} position: relative; z-index: 10;">
-                <div class="card-name" style="font-weight: bold; text-align: center; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                 style="width: 120px; ${!canPlay ? 'opacity: 0.55; cursor: default;' : 'cursor: pointer;'} animation-delay: ${idx * 0.04}s;">
+                <div class="card-name">
                     ${card.name} ${isTriunfo ? '👑' : ''}
                 </div>
-                <div class="card-stats" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; text-align: center;">
+                <div class="card-stats">
                     ${ATTRIBUTES.map(attr => `
-                        <div class="stat ${state.currentAttribute === attr ? 'active' : ''}" 
-                             style="background: rgba(0,0,0,0.3); padding: 4px 2px; border-radius: 4px; ${state.currentAttribute === attr ? 'background: var(--highlight); color: white;' : ''}">
-                            <span class="stat-label" style="display: block; font-size: 0.65rem; color: ${state.currentAttribute === attr ? 'rgba(255,255,255,0.8)' : 'var(--text-dim)'};">${ATTR_NAMES[attr]}</span>
-                            <span class="stat-value" style="display: block; font-weight: bold; font-size: 0.9rem; color: ${isTriunfo ? 'var(--warning)' : 'inherit'};">${isTriunfo ? 99 : card[attr]}</span>
+                        <div class="stat ${state.currentAttribute === attr ? 'active' : ''}">
+                            <span class="stat-label">${ATTR_NAMES[attr]}</span>
+                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 99 : card[attr]}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -484,6 +580,8 @@ function renderHand() {
     html += '</div>';
     container.innerHTML = html;
 }
+
+// ===================== SELECT ATTRIBUTE =====================
 
 async function selectAttribute(attr) {
     try {
@@ -500,6 +598,8 @@ async function selectAttribute(attr) {
         console.error('Select attribute error:', err);
     }
 }
+
+// ===================== PLAY CARD =====================
 
 async function playCard(cardId) {
     if (!state.currentAttribute || state.hasPlayedThisRound || state.isResolvingRound) {
@@ -548,9 +648,7 @@ async function playCard(cardId) {
         state.myHand = state.myHand.filter(c => c.id !== cardId);
         state.hasPlayedThisRound = true;
 
-
         addChat('System', `${state.playerName} played ${card.name} (${value})`);
-        
         
         const sortedSeats = state.players.map(p => p.seat_number).sort((a,b) => a-b);
         const currentIdx = sortedSeats.indexOf(state.currentTurn);
@@ -571,6 +669,8 @@ async function playCard(cardId) {
     }
 }
 
+// ===================== RENDER TABLE CARDS =====================
+
 function renderTableCards() {
     const container = document.getElementById('playsContainer');
     if (!container) return;
@@ -585,25 +685,17 @@ function renderTableCards() {
         const isStarter = play.seat_number === state.roundStarter;
         
         return `
-        <div style="
-            background: linear-gradient(135deg, #2d3748, #1a202c);
-            padding: 12px;
-            border-radius: 12px;
-            min-width: 110px;
-            text-align: center;
-            border: 3px solid ${isStarter ? '#ecc94b' : '#0f3460'};
-            box-shadow: 0 6px 20px rgba(0,0,0,0.5);
-            animation: slideIn 0.4s ease ${index * 0.15}s both;
-            position: relative;
-        ">
-            <div style="font-size: 11px; color: #a0a0a0; margin-bottom: 6px; font-weight: bold; text-transform: uppercase;">${play.players.name}</div>
-            <div style="font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #eaeaea;">${play.cards.name}</div>
-            <div style="font-size: 28px; font-weight: bold; color: #e94560; margin: 8px 0; text-shadow: 0 0 10px rgba(233, 69, 96, 0.4);">${play.value}</div>
-            <div style="font-size: 11px; color: #a0a0a0; background: rgba(0,0,0,0.4); padding: 3px 10px; border-radius: 12px; display: inline-block;">${ATTR_NAMES[play.attribute]}</div>
-            ${isTriunfo ? '<div style="position: absolute; top: -8px; right: -8px; background: #ecc94b; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);">👑</div>' : ''}
+        <div class="played-card ${isStarter ? 'starter' : ''}" style="animation-delay: ${index * 0.1}s;">
+            <div class="player-name">${play.players.name}</div>
+            <div class="card-name">${play.cards.name}</div>
+            <div class="value">${play.value}</div>
+            <div class="attribute">${ATTR_NAMES[play.attribute]}</div>
+            ${isTriunfo ? '<div class="triunfo-icon">👑</div>' : ''}
         </div>
     `}).join('');
 }
+
+// ===================== RESOLVE ROUND =====================
 
 async function resolveRound() {
     if (!state.isHost) return;
@@ -635,21 +727,21 @@ async function resolveRound() {
             .update({ won_rounds: newWonRounds })
             .eq('id', winner.player_id);
         
-await supabaseClient
-    .from('rooms')
-    .update({
-        game_data: { 
-            round_starter: state.roundStarter,
-            round_winner: {
-                name: winner.players.name,
-                cardName: winner.cards.name,
-                value: winner.value
-            }
-        }
-    })
-    .eq('id', state.roomId);
+        await supabaseClient
+            .from('rooms')
+            .update({
+                game_data: { 
+                    round_starter: state.roundStarter,
+                    round_winner: {
+                        name: winner.players.name,
+                        cardName: winner.cards.name,
+                        value: winner.value
+                    }
+                }
+            })
+            .eq('id', state.roomId);
 
-await new Promise(r => setTimeout(r, 3000));
+        await new Promise(r => setTimeout(r, 3000));
         
         await supabaseClient.from('current_turn_plays').delete().eq('room_id', state.roomId);
         
@@ -664,24 +756,24 @@ await new Promise(r => setTimeout(r, 3000));
                 .from('rooms')
                 .update({ phase: 'scoring' })
                 .eq('id', state.roomId);
-} else {
-    const nextSet = state.currentSet + 1;
-    
-    const sortedSeats = state.players.map(p => p.seat_number).sort((a, b) => a - b);
-    const currentStarterIdx = sortedSeats.indexOf(state.roundStarter);
-    const nextStarterIdx = (currentStarterIdx + 1) % sortedSeats.length;
-    const nextStarter = sortedSeats[nextStarterIdx];
+        } else {
+            const nextSet = state.currentSet + 1;
+            
+            const sortedSeats = state.players.map(p => p.seat_number).sort((a, b) => a - b);
+            const currentStarterIdx = sortedSeats.indexOf(state.roundStarter);
+            const nextStarterIdx = (currentStarterIdx + 1) % sortedSeats.length;
+            const nextStarter = sortedSeats[nextStarterIdx];
 
-    await supabaseClient
-        .from('rooms')
-        .update({
-            current_set: nextSet,
-            current_turn: nextStarter,
-            current_attribute: null,
-            game_data: { round_starter: nextStarter }
-        })
-        .eq('id', state.roomId);
-}
+            await supabaseClient
+                .from('rooms')
+                .update({
+                    current_set: nextSet,
+                    current_turn: nextStarter,
+                    current_attribute: null,
+                    game_data: { round_starter: nextStarter }
+                })
+                .eq('id', state.roomId);
+        }
         
     } catch (err) {
         console.error('Resolve round error:', err);
@@ -689,6 +781,8 @@ await new Promise(r => setTimeout(r, 3000));
         state.isResolvingRound = false;
     }
 }
+
+// ===================== SCORING =====================
 
 async function calculateScores() {
     try {
@@ -701,7 +795,8 @@ async function calculateScores() {
         
         let scoreHtml = '<div class="score-results">';
         
-        for (const p of players) {
+        for (let i = 0; i < players.length; i++) {
+            const p = players[i];
             const bid = p.predicted_rounds || 0;
             const won = p.won_rounds || 0;
             const correct = bid === won;
@@ -714,13 +809,15 @@ async function calculateScores() {
                 .eq('id', p.id);
             
             scoreHtml += `
-                <div class="score-item" style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
-                    <div style="font-weight: bold; margin-bottom: 0.5rem;">${p.name}</div>
-                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-                        <span>Bid: ${bid} | Won: ${won}</span>
-                        <span style="color: ${correct ? 'var(--success)' : 'var(--highlight)'}">${correct ? '✓ Exact!' : '✗ Miss'}</span>
+                <div class="score-item" style="animation-delay: ${i * 0.15}s;">
+                    <div style="font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 0.1em; color: var(--gold); margin-bottom: 0.4rem;">${p.name}</div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--text-dim);">
+                        <span>Bid: ${bid} · Won: ${won}</span>
+                        <span style="color: ${correct ? 'var(--success)' : 'var(--danger)'}; font-weight: 700;">${correct ? '✓ Exact!' : '✗ Miss'}</span>
                     </div>
-                    <div style="margin-top: 0.5rem; font-size: 1.1rem;">${won}×2 ${correct ? '+3' : '-2'} = <strong>${points} points</strong></div>
+                    <div style="margin-top: 0.4rem; font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; color: var(--text);">
+                        ${won}×2 ${correct ? '+3' : '−2'} = <span style="color: var(--gold);">${points} pts</span>
+                    </div>
                 </div>
             `;
         }
@@ -728,19 +825,25 @@ async function calculateScores() {
         scoreHtml += '</div>';
         
         document.getElementById('handContainer').innerHTML = `
-            <div style="text-align: center; padding: 2rem;">
-                <h2>Game Over!</h2>
+            <div style="text-align: center; padding: 1.5rem;">
+                <div style="font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; letter-spacing: 0.3em; background: linear-gradient(180deg, var(--gold-shine) 0%, var(--gold) 50%, var(--gold-dark) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; filter: drop-shadow(0 2px 10px rgba(212,160,23,0.5)); margin-bottom: 0.25rem;">Game Over</div>
+                <div style="width: 200px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 0 auto 1.5rem;"></div>
                 ${scoreHtml}
-                ${state.isHost ? '<button onclick="resetGame()" style="margin-top: 2rem; padding: 1rem 2rem; font-size: 1.1rem; background: var(--success); border: none; border-radius: 8px; color: white; cursor: pointer;">Play Again</button>' : ''}
+                ${state.isHost ? `<button onclick="resetGame()" style="margin-top: 1.5rem; padding: 0.75rem 2rem; font-size: 1rem; background: linear-gradient(135deg, #1a5c2a 0%, #2d8a4e 50%, #1a5c2a 100%); border-color: #48bb78; color: #fff;">Play Again</button>` : ''}
             </div>
         `;
         
         updateScoreboard();
         
+        // Celebration particles for game over
+        setTimeout(() => spawnWinnerParticles(), 400);
+        
     } catch (err) {
         console.error('Calculate scores error:', err);
     }
 }
+
+// ===================== RESET =====================
 
 async function resetGame() {
     state.gameStarting = false;
@@ -766,6 +869,8 @@ async function resetGame() {
         .eq('id', state.roomId);
 }
 
+// ===================== REALTIME =====================
+
 function setupRealtime() {
     console.log('Setting up realtime...');
     
@@ -777,27 +882,29 @@ function setupRealtime() {
                 console.log('Room update:', payload);
                 const room = payload.new;
                 
-const prevSet = state.currentSet;
-const prevPhase = state.phase;
+                const prevSet = state.currentSet;
+                const prevPhase = state.phase;
 
-// Show winner message on all clients
-if (room.game_data?.round_winner) {
-    const w = room.game_data.round_winner;
-    const container = document.getElementById('playsContainer');
-    if (container) {
-        container.innerHTML = `
-            <div style="text-align: center; padding: 2rem; animation: fadeIn 0.5s ease;">
-                <div style="font-size: 3rem; margin-bottom: 1rem;">🏆</div>
-                <div style="font-size: 1.5rem; color: var(--success); font-weight: bold;">${w.name} wins!</div>
-                <div style="font-size: 1.2rem; color: var(--highlight); margin-top: 0.5rem;">${w.cardName} (${w.value})</div>
-                <div style="font-size: 1rem; color: var(--text-dim); margin-top: 1rem;">Next round starting...</div>
-            </div>
-        `;
-    }
-    addChat('System', `🏆 ${w.name} wins the round with ${w.cardName} (${w.value})!`);
-}
+                // Show winner message on all clients
+                if (room.game_data?.round_winner) {
+                    const w = room.game_data.round_winner;
+                    const container = document.getElementById('playsContainer');
+                    if (container) {
+                        container.innerHTML = `
+                            <div class="winner-display" style="text-align: center; padding: 1.5rem; animation: winnerEntry 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;">
+                                <div class="trophy-icon">🏆</div>
+                                <div style="font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--gold); letter-spacing: 0.2em; margin: 0.5rem 0;">${w.name} wins!</div>
+                                <div style="font-size: 1.1rem; color: var(--text); margin-bottom: 0.5rem;">${w.cardName} <span style="color: var(--gold); font-family: 'Bebas Neue', sans-serif;">(${w.value})</span></div>
+                                <div style="width: 150px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold), transparent); margin: 0.75rem auto;"></div>
+                                <div style="color: var(--text-dim); font-size: 0.85rem; letter-spacing: 0.1em;">Next round starting...</div>
+                            </div>
+                        `;
+                    }
+                    // Spawn particles on winner announcement
+                    spawnWinnerParticles();
+                    addChat('System', `🏆 ${w.name} wins the round with ${w.cardName} (${w.value})!`);
+                }
 
-                // Update state values first
                 state.currentSet = room.current_set || 0;
                 state.currentTurn = room.current_turn || 0;
                 state.currentAttribute = room.current_attribute;
@@ -806,7 +913,6 @@ if (room.game_data?.round_winner) {
                     state.roundStarter = room.game_data.round_starter;
                 }
                 
-                // Handle phase change - compare against LOCAL state, not oldRoom
                 if (prevPhase !== room.phase) {
                     console.log('Phase change detected:', prevPhase, '->', room.phase);
                     
@@ -823,7 +929,6 @@ if (room.game_data?.round_winner) {
                     return;
                 }
                 
-                // Handle set change - compare against LOCAL state, not oldRoom
                 if (prevSet !== state.currentSet && prevSet !== 0) {
                     console.log('Set changed:', prevSet, '->', state.currentSet);
                     state.hasPlayedThisRound = false;
@@ -869,7 +974,6 @@ if (room.game_data?.round_winner) {
             async (payload) => {
                 const play = payload.new;
 
-                // Deduplicate by card_id + player_id instead of id
                 if (state.cachedPlays.some(p => p.player_id === play.player_id)) return;
 
                 const { data: fullPlay } = await supabaseClient
@@ -881,7 +985,17 @@ if (room.game_data?.round_winner) {
                 if (fullPlay) {
                     state.cachedPlays.push(fullPlay);
                     renderTableCards();
-                    console.log('Plays so far:', state.cachedPlays.length, '/', state.players.length);
+
+                    // Spawn a small particle burst at the card play area
+                    const container = document.getElementById('playsContainer');
+                    if (container) {
+                        const rect = container.getBoundingClientRect();
+                        spawnParticles(
+                            rect.left + rect.width / 2 + (state.cachedPlays.length - 1) * 80,
+                            rect.top + rect.height / 2,
+                            8
+                        );
+                    }
                 }
 
                 if (state.cachedPlays.length >= state.players.length && state.isHost && !state.isResolvingRound) {
@@ -892,6 +1006,8 @@ if (room.game_data?.round_winner) {
         )
         .subscribe();
 }
+
+// ===================== LOAD GAME STATE =====================
 
 async function loadGameState(room) {
     if (room.triunfo_card_id) {
@@ -928,6 +1044,8 @@ async function loadGameState(room) {
         await loadMyHand();
     }
 }
+
+// ===================== UI UPDATES =====================
 
 function updateSeatDisplay() {
     state.players.forEach(p => {
@@ -982,7 +1100,7 @@ function updateTurnIndicator() {
     } else if (state.phase === 'playing') {
         if (state.currentAttribute) {
             const current = state.players.find(p => p.seat_number === state.currentTurn);
-            indicator.textContent = `Set ${state.currentSet} - ${ATTR_NAMES[state.currentAttribute]} - ${current?.name}'s turn`;
+            indicator.textContent = `Set ${state.currentSet} · ${ATTR_NAMES[state.currentAttribute]} · ${current?.name}'s turn`;
         } else {
             const starter = state.players.find(p => p.seat_number === state.roundStarter);
             indicator.textContent = `${starter?.name} selects attribute...`;
@@ -1002,7 +1120,7 @@ function updatePhaseInfo(msg) {
             triunfo: 'El Triunfo revealed!',
             bidding: 'Place your bids!',
             playing: 'Play your cards!',
-            scoring: 'Calculating scores...'
+            scoring: 'Final scores...'
         };
         el.textContent = phases[state.phase] || '';
     }
@@ -1035,9 +1153,13 @@ function updatePlayerList() {
     if (!list) return;
     
     list.innerHTML = state.players.map(p => `
-        <li style="padding: 0.5rem; margin-bottom: 0.25rem; background: rgba(255,255,255,0.05); border-radius: 4px; display: flex; justify-content: space-between;">
-            <span>${p.name} ${p.seat_number === state.mySeat ? '(You)' : ''} ${p.id === state.playerId && state.isHost ? '👑' : ''}</span>
-            <span style="color: var(--text-dim);">#${p.seat_number}</span>
+        <li style="padding: 0.4rem 0.5rem; margin-bottom: 0.2rem; background: rgba(212,160,23,0.05); border: 1px solid rgba(212,160,23,0.1); border-radius: 4px; display: flex; justify-content: space-between; font-size: 0.85rem;">
+            <span style="color: ${p.id === state.playerId ? 'var(--gold)' : 'var(--text)'};">
+                ${p.name} 
+                ${p.seat_number === state.mySeat ? '<span style="color: var(--text-dim); font-size: 0.75rem;">(You)</span>' : ''}
+                ${p.id === state.playerId && state.isHost ? '👑' : ''}
+            </span>
+            <span style="color: var(--text-dim); font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.05em;">#${p.seat_number}</span>
         </li>
     `).join('');
 }
@@ -1048,13 +1170,15 @@ function updateScoreboard() {
     
     const sorted = [...state.players].sort((a, b) => (b.total_score || 0) - (a.total_score || 0));
     
-    list.innerHTML = sorted.map(p => `
-        <div class="score-item" style="padding: 0.5rem; margin-bottom: 0.25rem; background: rgba(255,255,255,0.05); border-radius: 4px; display: flex; justify-content: space-between;">
-            <span class="name" style="color: var(--text-dim);">${p.name}</span>
-            <span class="points" style="font-weight: bold; color: var(--success);">${p.total_score || 0}</span>
+    list.innerHTML = sorted.map((p, i) => `
+        <div style="padding: 0.4rem 0.5rem; margin-bottom: 0.2rem; background: rgba(212,160,23,0.05); border: 1px solid rgba(212,160,23,0.1); border-radius: 4px; display: flex; justify-content: space-between; font-size: 0.85rem;">
+            <span style="color: ${i === 0 ? 'var(--gold)' : 'var(--text-dim)'};">${i === 0 ? '👑 ' : ''}${p.name}</span>
+            <span style="font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: var(--gold);">${p.total_score || 0}</span>
         </div>
     `).join('');
 }
+
+// ===================== CHAT =====================
 
 async function sendChat() {
     const input = document.getElementById('chatInput');
@@ -1080,11 +1204,11 @@ function addChat(sender, message) {
     
     const div = document.createElement('div');
     div.className = `chat-message ${isSystem ? 'system' : ''}`;
-    div.style.cssText = 'padding: 0.4rem; margin-bottom: 0.25rem; border-radius: 4px; background: rgba(255,255,255,0.03); font-size: 0.85rem;';
+    div.style.cssText = 'padding: 0.35rem 0.4rem; margin-bottom: 0.2rem; border-radius: 3px; background: rgba(0,0,0,0.2); font-size: 0.78rem; border-left: 2px solid ' + (isSystem ? 'var(--gold-dark)' : 'var(--accent)') + ';';
     div.innerHTML = `
-        <span style="color: var(--text-dim); font-size: 0.75rem;">[${time}]</span>
-        <span style="font-weight: bold; color: ${isSystem ? 'var(--warning)' : 'var(--highlight)'};">${sender}:</span>
-        <span>${message}</span>
+        <span style="color: var(--text-dim); font-size: 0.7rem;">[${time}]</span>
+        <span style="font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.05em; color: ${isSystem ? 'var(--gold)' : 'var(--gold-light)'};">${sender}:</span>
+        <span style="color: var(--text);">${message}</span>
     `;
     
     log.appendChild(div);
@@ -1104,6 +1228,8 @@ async function leaveGame() {
     localStorage.removeItem('seatNumber');
     window.location.href = 'index.html';
 }
+
+// ===================== CHAT REALTIME =====================
 
 supabaseClient
     .channel(`chat-${state.roomCode}`)
