@@ -164,7 +164,7 @@ main {
 .table {
     position: relative;
     width: 100%;
-    max-width: 650px;
+    max-width: 780px;
     margin: 0 auto;
     aspect-ratio: 1;
     background:
@@ -172,14 +172,14 @@ main {
     border-radius: 50%;
     border: 4px solid var(--gold-dark);
     flex-shrink: 0;
-    min-height: 450px;
+    min-height: 540px;
     box-shadow:
         0 0 0 2px #0a0a0a,
         0 0 0 6px var(--gold-dark),
         0 0 0 8px #0a0a0a,
         0 0 60px rgba(0,0,0,0.9),
         inset 0 0 80px rgba(0,0,0,0.5);
-    overflow: hidden;
+    overflow: visible;
 }
 
 /* Felt texture pattern */
@@ -1141,13 +1141,16 @@ main {
     border-color: var(--gold-shine);
 }
 
-.stat.active .stat-label {
-    color: var(--text-dark);
-}
+.stat.active .stat-label { color: #1a1000; }
+.stat.active .stat-value { color: #1a1000; }
 
-.stat.active .stat-value {
-    color: var(--text-dark);
+/* Leyend: active stat needs explicit dark text since card bg is black */
+.card.cat-leyend .stat.active {
+    background: linear-gradient(135deg, #c89b3c 0%, #f0d878 100%);
+    border-color: #f5e090;
 }
+.card.cat-leyend .stat.active .stat-label,
+.card.cat-leyend .stat.active .stat-value { color: #1a1000; }
 
 /* ===================== ATTRIBUTE BUTTONS ===================== */
 .attr-btn {
@@ -1269,7 +1272,7 @@ main {
 /* ===================== RESPONSIVE ===================== */
 @media (max-width: 1024px) {
     .sidebar { width: 220px; }
-    .table { min-height: 400px; }
+    .table { min-height: 480px; }
     .plays-container { min-height: 100px; }
     .played-card { min-width: 80px; padding: 0.5rem; }
 }
@@ -1282,7 +1285,7 @@ main {
         border-left: none;
         border-top: 1px solid var(--gold-dark);
     }
-    .table { min-height: 350px; }
+    .table { min-height: 420px; }
     .seat { width: 90px; }
 }
 
