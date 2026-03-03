@@ -2,35 +2,36 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+        <link rel="icon" href="css/Favicon.jpeg" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Card Game - Lobby</title>
+    <title>El Bra</title>
     <link rel="stylesheet" href="css/lobby.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div class="container">
         <div class="logo">
-            <h1>🎴 CARD TABLE</h1>
-            <p>5-Player Online Card Game</p>
+            <h1>Bienvenido al bra online!</h1>
+            <p>5 Jugadores máximo en una epica partida de cartas machistas</p>
         </div>
 
         <div class="menu">
             <div class="card create-room">
-                <h2>Create Table</h2>
-                <input type="text" id="playerName" placeholder="Your Name" maxlength="12">
+                <h2>Crea una sala</h2>
+                <input type="text" id="playerName" placeholder="Tu nombre de fundador SICMERO" maxlength="30">
                 <button onclick="createRoom()" class="btn-primary">
-                    <span class="icon">➕</span> Create Private Room
+                    <span class="icon">➕</span> Crea la sala hombre
                 </button>
             </div>
 
             <div class="divider">or</div>
 
             <div class="card join-room">
-                <h2>Join Table</h2>
-                <input type="text" id="joinName" placeholder="Your Name" maxlength="12">
-                <input type="text" id="roomCode" placeholder="Room Code (6 letters)" maxlength="6" style="text-transform: uppercase;">
+                <h2>Unete a una sala</h2>
+                <input type="text" id="joinName" placeholder="Your Name" maxlength="30">
+                <input type="text" id="roomCode" placeholder="Código de la sala (6 letras)" maxlength="6" style="text-transform: uppercase;">
                 <button onclick="joinRoom()" class="btn-secondary">
-                    <span class="icon">🎮</span> Join Game
+                    <span class="icon"></span> Unete a un fundador SICMERO
                 </button>
             </div>
         </div>
@@ -38,9 +39,9 @@
         <div id="errorMsg" class="error"></div>
         
         <div class="features">
-            <div class="feature">🔄 Real-time Sync</div>
-            <div class="feature">🔒 Private Rooms</div>
-            <div class="feature">👥 5 Players Max</div>
+            <div class="feature">🔄 Sincronia en tiempo real</div>
+            <div class="feature">🔒 Salas privadas de juego</div>
+            <div class="feature">👥 5 Jugadores máximo</div>
         </div>
     </div>
 

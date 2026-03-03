@@ -1,176 +1,311 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;500;600;700&display=swap');
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
+:root {
+    --bg: #0e0e0e;
+    --bg-light: #161616;
+    --gold-light: #f5d78e;
+    --gold: #d4a017;
+    --gold-dark: #9a7210;
+    --gold-shine: #fff3b0;
+    --text-dark: #1a1008;
+    --text: #f5f0e8;
+    --text-dim: #b0a070;
+    --shadow-gold: rgba(212, 160, 23, 0.4);
+    --shadow-dark: rgba(0, 0, 0, 0.8);
+    --success: #2d8a4e;
+    --danger: #b33a1e;
+}
+
+/* ===================== BASE ===================== */
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    font-family: 'Rajdhani', sans-serif;
+    background: var(--bg);
+    color: var(--text);
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    color: white;
+    background-image:
+        radial-gradient(ellipse at 20% 50%, rgba(212, 160, 23, 0.05) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 50%, rgba(212, 160, 23, 0.03) 0%, transparent 60%);
 }
 
+/* ===================== CONTAINER ===================== */
 .container {
     text-align: center;
-    padding: 2rem;
-    max-width: 500px;
+    padding: 2.5rem 2rem;
+    max-width: 520px;
     width: 100%;
+    animation: fadeInUp 0.7s ease both;
 }
 
+/* ===================== LOGO ===================== */
 .logo {
-    margin-bottom: 3rem;
-    animation: fadeInDown 0.8s ease;
+    margin-bottom: 2.5rem;
+    animation: fadeInDown 0.7s ease both;
 }
 
 .logo h1 {
-    font-size: 3rem;
-    margin-bottom: 0.5rem;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    letter-spacing: 2px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3.5rem;
+    letter-spacing: 0.4em;
+    background: linear-gradient(180deg, var(--gold-shine) 0%, var(--gold) 40%, var(--gold-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 2px 10px rgba(212, 160, 23, 0.5));
+    margin-bottom: 0.4rem;
 }
 
 .logo p {
-    opacity: 0.9;
-    font-size: 1.1rem;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.9rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 600;
 }
 
+.logo::after {
+    content: '';
+    display: block;
+    width: 260px;
+    height: 2px;
+    margin: 1.2rem auto 0;
+    background: linear-gradient(90deg, transparent, var(--gold), var(--gold-shine), var(--gold), transparent);
+    opacity: 0.6;
+}
+
+/* ===================== MENU ===================== */
 .menu {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    animation: fadeInUp 0.8s ease 0.2s both;
+    gap: 1.2rem;
 }
 
+/* ===================== CARDS ===================== */
 .card {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border-radius: 20px;
-    padding: 2rem;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    transition: transform 0.3s, box-shadow 0.3s;
+    background: linear-gradient(160deg, #1a1610 0%, #111008 100%);
+    border: 1px solid var(--gold-dark);
+    border-radius: 6px;
+    padding: 1.75rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(212,160,23,0.08);
+}
+
+/* diamond texture overlay */
+.card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(45deg, rgba(212,160,23,0.04) 25%, transparent 25%),
+        linear-gradient(-45deg, rgba(212,160,23,0.04) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, rgba(212,160,23,0.04) 75%),
+        linear-gradient(-45deg, transparent 75%, rgba(212,160,23,0.04) 75%);
+    background-size: 12px 12px;
+    pointer-events: none;
+}
+
+/* shimmer sweep on hover */
+.card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        105deg,
+        transparent 40%,
+        rgba(255, 243, 176, 0.08) 50%,
+        transparent 60%
+    );
+    background-size: 200% 100%;
+    background-position: 200% center;
+    transition: background-position 0.5s ease;
+    pointer-events: none;
+}
+
+.card:hover::after {
+    background-position: -200% center;
 }
 
 .card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 36px rgba(0,0,0,0.7), 0 0 20px var(--shadow-gold);
+    border-color: var(--gold);
 }
 
 .card h2 {
-    margin-bottom: 1.5rem;
-    font-size: 1.5rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.2rem;
+    letter-spacing: 0.25em;
+    color: var(--gold-light);
+    margin-bottom: 1.2rem;
+    text-transform: uppercase;
 }
 
+/* ===================== DIVIDER "or" ===================== */
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+}
+
+.divider::before {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dark));
+}
+
+.divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--gold-dark), transparent);
+}
+
+/* ===================== INPUTS ===================== */
 input {
     width: 100%;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border: none;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.9);
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.85rem;
+    border: 1px solid var(--gold-dark);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.5);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
     font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-align: center;
-    transition: box-shadow 0.3s;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input::placeholder {
+    color: var(--text-dim);
+    font-weight: 500;
+    letter-spacing: 0.05em;
 }
 
 input:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5);
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px rgba(212, 160, 23, 0.2), 0 0 8px rgba(212,160,23,0.15);
 }
 
+/* ===================== BUTTONS ===================== */
 button {
     width: 100%;
-    padding: 1rem;
-    border: none;
-    border-radius: 10px;
-    font-size: 1.1rem;
-    font-weight: bold;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--gold-shine);
+    border-radius: 3px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.05rem;
+    letter-spacing: 0.15em;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.15);
+    font-weight: 400;
 }
 
 .btn-primary {
-    background: #00d26a;
-    color: white;
+    background: linear-gradient(135deg, #1a5c2a 0%, #2d8a4e 50%, #1a5c2a 100%);
+    border-color: #48bb78;
+    color: #fff;
 }
 
 .btn-primary:hover {
-    background: #00b85c;
-    transform: scale(1.02);
+    background: linear-gradient(135deg, #2d8a4e 0%, #48bb78 50%, #2d8a4e 100%);
+    box-shadow: 0 6px 20px rgba(45, 138, 78, 0.45);
+    transform: translateY(-2px);
 }
 
 .btn-secondary {
-    background: #ffd700;
-    color: #333;
+    background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold) 50%, var(--gold-dark) 100%);
+    border-color: var(--gold-shine);
+    color: var(--text-dark);
 }
 
 .btn-secondary:hover {
-    background: #ffed4e;
-    transform: scale(1.02);
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-shine) 50%, var(--gold) 100%);
+    box-shadow: 0 6px 20px var(--shadow-gold), inset 0 1px 0 rgba(255,255,255,0.3);
+    transform: translateY(-2px);
 }
 
-.divider {
-    display: flex;
-    align-items: center;
-    text-align: center;
-    opacity: 0.7;
+button:active {
+    transform: translateY(0);
 }
 
-.divider::before,
-.divider::after {
-    content: '';
-    flex: 1;
-    border-bottom: 1px solid rgba(255,255,255,0.3);
-}
-
-.divider span {
-    padding: 0 1rem;
-}
-
+/* ===================== ERROR ===================== */
 .error {
-    background: #ff4757;
-    color: white;
-    padding: 1rem;
-    border-radius: 10px;
+    background: linear-gradient(135deg, #6b1e0e 0%, #b33a1e 100%);
+    border: 1px solid #e05030;
+    color: #fff;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    border-radius: 3px;
     margin-top: 1rem;
     display: none;
-    animation: shake 0.5s;
+    animation: shake 0.5s ease;
 }
 
+/* ===================== FEATURES ===================== */
 .features {
     display: flex;
     justify-content: center;
     gap: 2rem;
-    margin-top: 3rem;
-    opacity: 0.8;
-    font-size: 0.9rem;
-    animation: fadeIn 1s ease 0.5s both;
+    margin-top: 2.5rem;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    animation: fadeIn 1s ease 0.4s both;
 }
 
+/* ===================== SCROLLBAR ===================== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+/* ===================== ANIMATIONS ===================== */
 @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-30px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(-25px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(30px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(25px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fadeIn {
     from { opacity: 0; }
-    to { opacity: 0.8; }
+    to   { opacity: 1; }
 }
 
 @keyframes shake {
     0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-10px); }
-    75% { transform: translateX(10px); }
+    25%       { transform: translateX(-10px); }
+    75%       { transform: translateX(10px); }
 }
