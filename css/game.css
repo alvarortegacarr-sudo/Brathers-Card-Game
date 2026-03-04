@@ -182,7 +182,6 @@ main {
     overflow: visible;
 }
 
-/* Felt texture pattern */
 .table::before {
     content: '';
     position: absolute;
@@ -199,7 +198,6 @@ main {
     pointer-events: none;
 }
 
-/* Gold ring shine */
 .table::after {
     content: '';
     position: absolute;
@@ -314,7 +312,6 @@ main {
     overflow: hidden;
 }
 
-/* Diamond geometric pattern overlay */
 .triunfo::before {
     content: '';
     position: absolute;
@@ -395,7 +392,6 @@ main {
     animation: triunfoReveal 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
-/* Gold shimmer sweep */
 @keyframes shimmerSweep {
     0% { background-position: -200% center; }
     100% { background-position: 200% center; }
@@ -471,7 +467,6 @@ main {
     transform-origin: bottom center;
 }
 
-/* Diamond pattern on played cards */
 .played-card::before {
     content: '';
     position: absolute;
@@ -491,7 +486,6 @@ main {
     box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 20px rgba(255,243,176,0.4);
 }
 
-/* Card fly-in animation */
 @keyframes cardFlyIn {
     0% {
         opacity: 0;
@@ -584,6 +578,60 @@ main {
     to { transform: scale(1) rotate(0deg); }
 }
 
+/* ===================== AVG BADGE ===================== */
+.avg-badge {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    background: linear-gradient(135deg, rgba(0,0,0,0.75) 0%, rgba(20,14,4,0.85) 100%);
+    border: 1px solid var(--gold-dark);
+    border-radius: 5px;
+    padding: 1px 5px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 0.72rem;
+    color: var(--gold-light);
+    letter-spacing: 0.05em;
+    line-height: 1.4;
+    z-index: 5;
+    pointer-events: none;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+/* avg badge color overrides per category */
+.card.cat-silver .avg-badge {
+    background: linear-gradient(135deg, rgba(40,40,40,0.8) 0%, rgba(20,20,20,0.9) 100%);
+    border-color: #a8a8a8;
+    color: #e0e0e0;
+}
+.card.cat-bronze .avg-badge {
+    background: linear-gradient(135deg, rgba(40,20,5,0.8) 0%, rgba(20,10,0,0.9) 100%);
+    border-color: #c07838;
+    color: #f5c890;
+}
+.card.cat-gold .avg-badge {
+    background: linear-gradient(135deg, rgba(60,40,0,0.75) 0%, rgba(30,20,0,0.85) 100%);
+    border-color: #d4a017;
+    color: #fff3b0;
+}
+.card.cat-leyend .avg-badge {
+    background: linear-gradient(135deg, rgba(200,155,60,0.18) 0%, rgba(0,0,0,0.8) 100%);
+    border-color: #c89b3c;
+    color: #f0d878;
+}
+.card.cat-toti .avg-badge {
+    background: linear-gradient(135deg, rgba(20,40,80,0.75) 0%, rgba(10,20,40,0.85) 100%);
+    border-color: #60c0ff;
+    color: #c0e8ff;
+}
+
+/* avg badge on played cards on the table */
+.played-card .avg-badge {
+    font-size: 0.65rem;
+    top: 4px;
+    left: 4px;
+    padding: 1px 4px;
+}
+
 /* ===================== PHASE TRANSITION OVERLAY ===================== */
 .phase-overlay {
     position: fixed;
@@ -643,7 +691,6 @@ main {
     }
 }
 
-/* Golden divider lines */
 .phase-divider {
     width: 300px;
     height: 2px;
@@ -785,7 +832,7 @@ main {
     background: linear-gradient(180deg, #0a0a0a 0%, #0e0e0e 100%);
     border-top: 2px solid var(--gold-dark);
     padding: 0.75rem 1rem;
-    max-height: 35vh;
+    max-height: 38vh;
     overflow-y: auto;
     flex-shrink: 0;
     position: relative;
@@ -818,25 +865,34 @@ main {
     flex-wrap: wrap;
 }
 
-/* ===================== HAND CARDS (FIFA STYLE) ===================== */
+/* ===================== HAND CARDS ===================== */
 .card {
+    /* --- SIZE FIX: was 120px, now 160px with fixed min-height --- */
     background: linear-gradient(160deg, var(--cream) 0%, var(--bg-card) 55%, var(--bg-card-dark) 100%);
     border: 2px solid var(--gold);
     border-radius: 10px;
-    padding: 0.6rem;
-    width: 120px;
+    padding: 0.7rem 0.65rem 0.65rem;
+    width: 160px;
+    min-height: 175px;
     transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s;
     position: relative;
     user-select: none;
-    overflow: hidden;
+    /* overflow visible so avg-badge is never clipped */
+    overflow: visible;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
-/* Diamond texture on hand cards */
+/* Inner clip mask so decorative patterns stay inside rounded corners */
+.card > *:not(.avg-badge) {
+    position: relative;
+    z-index: 1;
+}
+
 .card::before {
     content: '';
     position: absolute;
     inset: 0;
+    border-radius: 8px;
     background-image:
         linear-gradient(45deg, rgba(212,160,23,0.07) 25%, transparent 25%),
         linear-gradient(-45deg, rgba(212,160,23,0.07) 25%, transparent 25%),
@@ -846,11 +902,11 @@ main {
     pointer-events: none;
 }
 
-/* Shimmer on hover */
 .card::after {
     content: '';
     position: absolute;
     inset: 0;
+    border-radius: 8px;
     background: linear-gradient(
         105deg,
         transparent 40%,
@@ -861,7 +917,6 @@ main {
     background-position: 200% center;
     transition: background-position 0.4s ease;
     pointer-events: none;
-    border-radius: 8px;
 }
 
 .card:hover::after {
@@ -880,14 +935,7 @@ main {
     box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 20px rgba(255,243,176,0.4);
 }
 
-/* ===================== CATEGORY CARD THEMES =====================
-   Colors matched to actual FIFA Ultimate Team card tiers
-   Bronze: #c07838 border, warm tan body
-   Silver: #a8a8a8 border, cool grey body
-   Gold:   #d4a017 border, warm cream-yellow body  (the reference card)
-   Leyend: #c89b3c border, jet black body with gold text (special black FUT cards)
-   Toti:   cycling prismatic border, white iridescent body (TOTY/special)
-================================================================= */
+/* ===================== CATEGORY CARD THEMES ===================== */
 
 /* ── BRONZE ───────────────────────────────────────────── */
 .card.cat-bronze {
@@ -945,7 +993,7 @@ main {
     color: #f0f0f0; border-color: #d0d0d0;
 }
 
-/* ── GOLD  (matches the reference card exactly) ───────── */
+/* ── GOLD ───────────────────────────────────────────── */
 .card.cat-gold {
     background: linear-gradient(170deg, #faf0c8 0%, #f0d878 45%, #d4b840 100%);
     border: 3px solid #d4a017;
@@ -973,7 +1021,7 @@ main {
     color: #fff8d0; border-color: #f5d060;
 }
 
-/* ── LEYEND  (black special card with gold trim) ──────── */
+/* ── LEYEND ───────────────────────────────────────────── */
 .card.cat-leyend {
     background: linear-gradient(170deg, #2a2418 0%, #1a1610 45%, #0e0c08 100%);
     border: 3px solid #c89b3c;
@@ -1006,7 +1054,7 @@ main {
     color: #fff8d0; border-color: #e8c060;
 }
 
-/* ── TOTI  (TOTY-style: white + prismatic cycling border) */
+/* ── TOTI ───────────────────────────────────────────── */
 .card.cat-toti {
     background: linear-gradient(170deg, #ffffff 0%, #f0f8ff 40%, #e8f0ff 100%);
     border: 3px solid #60c0ff;
@@ -1081,6 +1129,7 @@ main {
 .played-card.cat-toti { background: linear-gradient(170deg, #ffffff, #e8f0ff); border-color: #60c0ff; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 24px rgba(96,192,255,0.55); animation: totiShift 3s linear infinite; }
 .played-card.cat-toti .card-name, .played-card.cat-toti .player-name { color: #101828; }
 .played-card.cat-toti .value { color: #2060a0; }
+
 .category-badge {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 0.6rem;
@@ -1100,11 +1149,13 @@ main {
     margin-bottom: 0.4rem;
     padding-bottom: 0.35rem;
     border-bottom: 1px solid rgba(212,160,23,0.3);
-    font-size: 0.85rem;
+    /* slightly larger now that card is wider */
+    font-size: 0.92rem;
     color: var(--text-dark);
     letter-spacing: 0.05em;
 }
 
+/* ===================== CARD STATS GRID ===================== */
 .card-stats {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -1115,7 +1166,7 @@ main {
 .stat {
     background: rgba(212, 160, 23, 0.08);
     border: 1px solid rgba(212,160,23,0.15);
-    padding: 3px 1px;
+    padding: 4px 2px;
     border-radius: 3px;
     transition: all 0.2s;
 }
@@ -1123,15 +1174,17 @@ main {
 .stat-label {
     display: block;
     color: var(--text-mid);
-    font-size: 0.55rem;
+    /* bumped up from 0.55rem */
+    font-size: 0.6rem;
     font-weight: 700;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.03em;
 }
 
 .stat-value {
     display: block;
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 0.85rem;
+    /* bumped up from 0.85rem */
+    font-size: 1rem;
     color: var(--text-dark);
     line-height: 1.1;
 }
@@ -1144,7 +1197,6 @@ main {
 .stat.active .stat-label { color: #1a1000; }
 .stat.active .stat-value { color: #1a1000; }
 
-/* Leyend: active stat needs explicit dark text since card bg is black */
 .card.cat-leyend .stat.active {
     background: linear-gradient(135deg, #c89b3c 0%, #f0d878 100%);
     border-color: #f5e090;
@@ -1251,23 +1303,10 @@ main {
 }
 
 /* ===================== SCROLLBAR ===================== */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: #0a0a0a;
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--gold-dark);
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--gold);
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold); }
 
 /* ===================== RESPONSIVE ===================== */
 @media (max-width: 1024px) {
@@ -1275,6 +1314,7 @@ main {
     .table { min-height: 480px; }
     .plays-container { min-height: 100px; }
     .played-card { min-width: 80px; padding: 0.5rem; }
+    .card { width: 148px; min-height: 165px; }
 }
 
 @media (max-width: 768px) {
@@ -1287,25 +1327,18 @@ main {
     }
     .table { min-height: 420px; }
     .seat { width: 90px; }
+    .card { width: 140px; min-height: 155px; }
 }
 
 /* ===================== UTILITY ANIMATIONS ===================== */
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-@keyframes slideUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes goldGlow {
     0%, 100% { filter: drop-shadow(0 0 6px rgba(212,160,23,0.4)); }
     50% { filter: drop-shadow(0 0 16px rgba(212,160,23,0.8)); }
 }
 
-/* ===================== PARTICLE BURST (for phase transitions) ===================== */
+/* ===================== PARTICLE BURST ===================== */
 .particle {
     position: fixed;
     pointer-events: none;

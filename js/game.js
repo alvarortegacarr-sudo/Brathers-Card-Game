@@ -19,6 +19,22 @@ function cardBadgeHTML(card) {
     return `<div class="category-badge">${label}</div>`;
 }
 
+// ── NEW: returns the avg badge HTML for any card object ──────────────────────
+// Uses the stored `avg` column if available; falls back to computing it live.
+function cardAvgBadgeHTML(card, isTriunfo = false) {
+    if (isTriunfo) {
+        return `<div class="avg-badge">AVG 99</div>`;
+    }
+    let avg;
+    if (card.avg !== null && card.avg !== undefined) {
+        avg = Math.round(card.avg);
+    } else {
+        const sum = ATTRIBUTES.reduce((s, a) => s + (card[a] || 0), 0);
+        avg = Math.round(sum / ATTRIBUTES.length);
+    }
+    return `<div class="avg-badge">AVG ${avg}</div>`;
+}
+
 const state = {
     playerId: localStorage.getItem('playerId') || crypto.randomUUID(),
     playerName: localStorage.getItem('currentPlayer'),
@@ -55,7 +71,6 @@ if (!localStorage.getItem('playerId')) {
 // ===================== ANIMATION HELPERS =====================
 
 function showPhaseOverlay(title, subtitle, duration = 3500) {
-    // Remove existing overlay
     const existing = document.getElementById('phaseOverlay');
     if (existing) existing.remove();
 
@@ -70,7 +85,6 @@ function showPhaseOverlay(title, subtitle, duration = 3500) {
     `;
     document.body.appendChild(overlay);
 
-    // Force reflow then animate
     requestAnimationFrame(() => {
         overlay.classList.add('show');
     });
@@ -109,7 +123,6 @@ function spawnParticles(x, y, count = 18, colors = ['#d4a017', '#f5d78e', '#fff3
 }
 
 function spawnWinnerParticles() {
-    // Spawn from multiple points across the screen
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2;
     spawnParticles(cx, cy, 30);
@@ -284,10 +297,8 @@ function initPhase(phase) {
     
     switch(phase) {
         case 'triunfo':
-            // Big cinematic reveal
             showPhaseOverlay('EL TRIUNFO', state.triunfoCard?.name || '—', 3500);
             showTriunfo();
-            // Spawn gold particles around triunfo area
             setTimeout(() => {
                 const cx = window.innerWidth / 2;
                 const cy = window.innerHeight / 2;
@@ -388,9 +399,10 @@ function renderBidding() {
         const isTriunfo = card.id === state.triunfoCard?.id;
         const catClass = isTriunfo ? 'triunfo' : cardCategoryClass(card);
         html += `
-            <div class="card ${catClass}" style="width: 110px; padding: 0.6rem; opacity: 0.9; animation-delay: ${idx * 0.05}s;">
+            <div class="card ${catClass}" style="opacity: 0.9; animation-delay: ${idx * 0.05}s;">
+                ${cardAvgBadgeHTML(card, isTriunfo)}
                 ${cardBadgeHTML(card)}
-                <div class="card-name" style="font-size: 0.75rem;">${card.name} ${isTriunfo ? '👑' : ''}</div>
+                <div class="card-name" style="font-size: 0.8rem;">${card.name} ${isTriunfo ? '👑' : ''}</div>
                 <div class="card-stats">
                     ${ATTRIBUTES.map(attr => `
                         <div class="stat">
@@ -577,7 +589,8 @@ function renderHand() {
         html += `
             <div class="card ${catClass}" 
                  ${canPlay ? `ondblclick="playCard(${card.id})"` : ''}
-                 style="width: 120px; ${!canPlay ? 'opacity: 0.55; cursor: default;' : 'cursor: pointer;'} animation-delay: ${idx * 0.04}s;">
+                 style="${!canPlay ? 'opacity: 0.55; cursor: default;' : 'cursor: pointer;'} animation-delay: ${idx * 0.04}s;">
+                ${cardAvgBadgeHTML(card, isTriunfo)}
                 ${cardBadgeHTML(card)}
                 <div class="card-name">
                     ${card.name} ${isTriunfo ? '👑' : ''}
@@ -704,9 +717,13 @@ function renderTableCards() {
         const badgeHTML = (play.cards.category && !isTriunfo)
             ? `<div class="category-badge" style="margin-bottom:4px;">${CATEGORY_LABELS[play.cards.category.toLowerCase()] || play.cards.category}</div>`
             : '';
+
+        // avg for played cards on the table
+        const avgBadge = cardAvgBadgeHTML(play.cards, isTriunfo);
         
         return `
         <div class="played-card ${isStarter ? 'starter' : ''} ${catClass}" style="animation-delay: ${index * 0.1}s;">
+            ${avgBadge}
             <div class="player-name">${play.players.name}</div>
             ${badgeHTML}
             <div class="card-name">${play.cards.name}</div>
@@ -736,6 +753,7 @@ async function resolveRound() {
         const winner = plays.reduce((best, play) => {
             if (play.value > best.value) return play;
             if (play.value === best.value) {
+                // tiebreaker: highest total across all attributes (= highest avg)
                 const playTotal = ATTRIBUTES.reduce((sum, attr) => sum + (play.cards[attr] || 0), 0);
                 const bestTotal = ATTRIBUTES.reduce((sum, attr) => sum + (best.cards[attr] || 0), 0);
                 if (playTotal > bestTotal) return play;
@@ -856,8 +874,6 @@ async function calculateScores() {
         `;
         
         updateScoreboard();
-        
-        // Celebration particles for game over
         setTimeout(() => spawnWinnerParticles(), 400);
         
     } catch (err) {
@@ -907,7 +923,6 @@ function setupRealtime() {
                 const prevSet = state.currentSet;
                 const prevPhase = state.phase;
 
-                // Show winner message on all clients
                 if (room.game_data?.round_winner) {
                     const w = room.game_data.round_winner;
                     const container = document.getElementById('playsContainer');
@@ -922,7 +937,6 @@ function setupRealtime() {
                             </div>
                         `;
                     }
-                    // Spawn particles on winner announcement
                     spawnWinnerParticles();
                     addChat('System', `🏆 ${w.name} wins the round with ${w.cardName} (${w.value})!`);
                 }
@@ -1008,7 +1022,6 @@ function setupRealtime() {
                     state.cachedPlays.push(fullPlay);
                     renderTableCards();
 
-                    // Spawn a small particle burst at the card play area
                     const container = document.getElementById('playsContainer');
                     if (container) {
                         const rect = container.getBoundingClientRect();
