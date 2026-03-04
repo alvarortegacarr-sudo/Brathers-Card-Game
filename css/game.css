@@ -582,7 +582,7 @@ main {
 .avg-badge {
     position: absolute;
     top: 5px;
-    left: 5px;
+    right: 5px;
     background: linear-gradient(135deg, rgba(0,0,0,0.75) 0%, rgba(20,14,4,0.85) 100%);
     border: 1px solid var(--gold-dark);
     border-radius: 5px;
@@ -628,7 +628,7 @@ main {
 .played-card .avg-badge {
     font-size: 0.65rem;
     top: 4px;
-    left: 4px;
+    right: 4px;
     padding: 1px 4px;
 }
 
