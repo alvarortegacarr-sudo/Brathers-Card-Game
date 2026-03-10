@@ -465,6 +465,7 @@ main {
     position: relative;
     overflow: hidden;
     transform-origin: bottom center;
+    animation: cardFlyIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
 .played-card::before {
@@ -504,10 +505,6 @@ main {
         transform: translateY(0) scale(1) rotate(0deg);
         filter: brightness(1);
     }
-}
-
-.played-card {
-    animation: cardFlyIn 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
 }
 
 .played-card:hover {
@@ -597,7 +594,6 @@ main {
     box-shadow: 0 1px 4px rgba(0,0,0,0.5);
 }
 
-/* avg badge color overrides per category */
 .card.cat-silver .avg-badge {
     background: linear-gradient(135deg, rgba(40,40,40,0.8) 0%, rgba(20,20,20,0.9) 100%);
     border-color: #a8a8a8;
@@ -624,7 +620,6 @@ main {
     color: #c0e8ff;
 }
 
-/* avg badge on played cards on the table */
 .played-card .avg-badge {
     font-size: 0.65rem;
     top: 4px;
@@ -867,7 +862,6 @@ main {
 
 /* ===================== HAND CARDS ===================== */
 .card {
-    /* --- SIZE FIX: was 120px, now 160px with fixed min-height --- */
     background: linear-gradient(160deg, var(--cream) 0%, var(--bg-card) 55%, var(--bg-card-dark) 100%);
     border: 2px solid var(--gold);
     border-radius: 10px;
@@ -877,12 +871,10 @@ main {
     transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.2s;
     position: relative;
     user-select: none;
-    /* overflow visible so avg-badge is never clipped */
     overflow: visible;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
 
-/* Inner clip mask so decorative patterns stay inside rounded corners */
 .card > *:not(.avg-badge) {
     position: relative;
     z-index: 1;
@@ -1054,7 +1046,7 @@ main {
     color: #fff8d0; border-color: #e8c060;
 }
 
-/* ── TOTI ───────────────────────────────────────────── */
+/* ── TOTI (hand card) ─────────────────────────────────── */
 .card.cat-toti {
     background: linear-gradient(170deg, #ffffff 0%, #f0f8ff 40%, #e8f0ff 100%);
     border: 3px solid #60c0ff;
@@ -1126,9 +1118,22 @@ main {
 .played-card.cat-leyend .value { color: #f0d878; }
 .played-card.cat-leyend .attribute { background: rgba(200,155,60,0.15); border-color: rgba(200,155,60,0.3); color: #c89b3c; }
 
-.played-card.cat-toti { background: linear-gradient(170deg, #ffffff, #e8f0ff); border-color: #60c0ff; box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 24px rgba(96,192,255,0.55); animation: totiShift 3s linear infinite; }
-.played-card.cat-toti .card-name, .played-card.cat-toti .player-name { color: #101828; }
-.played-card.cat-toti .value { color: #2060a0; }
+/* ── TOTI played card on table — FIX: layer cardFlyIn + totiShift ── */
+.played-card.cat-toti {
+    background: linear-gradient(170deg, #ffffff, #e8f0ff);
+    border-color: #60c0ff;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6), 0 0 24px rgba(96,192,255,0.55);
+    /* Run entry animation first (0.55s), then colour-shift loop starts after */
+    animation-name: cardFlyIn, totiShift;
+    animation-duration: 0.55s, 3s;
+    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.275), linear;
+    animation-fill-mode: both, none;
+    animation-iteration-count: 1, infinite;
+    animation-delay: 0s, 0.55s;
+}
+.played-card.cat-toti .card-name,
+.played-card.cat-toti .player-name { color: #101828; }
+.played-card.cat-toti .value        { color: #2060a0; }
 
 .category-badge {
     font-family: 'Bebas Neue', sans-serif;
@@ -1149,7 +1154,6 @@ main {
     margin-bottom: 0.4rem;
     padding-bottom: 0.35rem;
     border-bottom: 1px solid rgba(212,160,23,0.3);
-    /* slightly larger now that card is wider */
     font-size: 0.92rem;
     color: var(--text-dark);
     letter-spacing: 0.05em;
@@ -1174,7 +1178,6 @@ main {
 .stat-label {
     display: block;
     color: var(--text-mid);
-    /* bumped up from 0.55rem */
     font-size: 0.6rem;
     font-weight: 700;
     letter-spacing: 0.03em;
@@ -1183,7 +1186,6 @@ main {
 .stat-value {
     display: block;
     font-family: 'Bebas Neue', sans-serif;
-    /* bumped up from 0.85rem */
     font-size: 1rem;
     color: var(--text-dark);
     line-height: 1.1;
