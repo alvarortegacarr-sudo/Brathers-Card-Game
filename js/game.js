@@ -23,7 +23,7 @@ function cardBadgeHTML(card) {
 // Uses the stored `avg` column if available; falls back to computing it live.
 function cardAvgBadgeHTML(card, isTriunfo = false) {
     if (isTriunfo) {
-        return `<div class="avg-badge">AVG 99</div>`;
+        return `<div class="avg-badge">AVG 100</div>`;
     }
     let avg;
     if (card.avg !== null && card.avg !== undefined) {
@@ -407,7 +407,7 @@ function renderBidding() {
                     ${ATTRIBUTES.map(attr => `
                         <div class="stat">
                             <span class="stat-label">${ATTR_NAMES[attr]}</span>
-                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 99 : card[attr]}</span>
+                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 100 : card[attr]}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -599,7 +599,7 @@ function renderHand() {
                     ${ATTRIBUTES.map(attr => `
                         <div class="stat ${state.currentAttribute === attr ? 'active' : ''}">
                             <span class="stat-label">${ATTR_NAMES[attr]}</span>
-                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 99 : card[attr]}</span>
+                            <span class="stat-value" style="${isTriunfo ? 'color: var(--gold-dark);' : ''}">${isTriunfo ? 100 : card[attr]}</span>
                         </div>
                     `).join('')}
                 </div>
@@ -640,7 +640,7 @@ async function playCard(cardId) {
     if (!card) return;
     
     const isTriunfo = card.id === state.triunfoCard?.id;
-    const value = isTriunfo ? 99 : card[state.currentAttribute];
+    const value = isTriunfo ? 100 : card[state.currentAttribute];
     
     try {
         const { data: existingPlay } = await supabaseClient
