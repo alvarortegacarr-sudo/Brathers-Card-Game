@@ -840,7 +840,7 @@ async function calculateScores() {
             const bid = p.predicted_rounds || 0;
             const won = p.won_rounds || 0;
             const correct = bid === won;
-            let points = (won * 2) + (correct ? 3 : -2);
+            let points = (won * 2) + (correct ? 3 : -3);
             const newTotal = (p.total_score || 0) + points;
             
             await supabaseClient
