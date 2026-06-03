@@ -3,7 +3,7 @@
 // ==========================================
 
 const ATTRIBUTES = ['car', 'cul', 'tet', 'fis', 'per'];
-const ATTR_NAMES = { car: 'CAR', cul: 'CUL', tet: 'TET', fis: 'FIS', per: 'PER' };
+const ATTR_NAMES = { car: 'ATQ', cul: 'DEF', tet: 'RES', fis: 'FIS', per: 'IQ' };
 const CARDS_PER_PLAYER = { 2: 20, 3: 13, 4: 10, 5: 8 };
 
 const CATEGORY_LABELS = { bronze: 'Bronze', silver: 'Silver', gold: 'Gold', leyend: 'Leyend', toti: 'Toti' };
